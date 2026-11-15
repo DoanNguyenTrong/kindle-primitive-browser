@@ -41,7 +41,8 @@ pub fn icon(name: &str, size: u32) -> String {
         "exit" => r#"<path d="M14 5 H19 V19 H14"/><path d="M4 12 H15 M11 8 L15 12 L11 16"/>"#,
         "newtab" => r#"<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M12 9 V15 M9 12 H15"/>"#,
         "check" => r#"<path d="M5 12.5 L10 17 L19 7"/>"#,
-        "chev-up" => r#"<path d="M6 15 L12 9 L18 15"/>"#,
+        "image" => r#"<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17 L10 13 L13 16 L15 14 L19 18"/>"#,
+        "chev-up" =>r#"<path d="M6 15 L12 9 L18 15"/>"#,
         "chev-down" => r#"<path d="M6 9 L12 15 L18 9"/>"#,
         "up" => r#"<path d="M12 19 V6 M6 11 L12 5 L18 11"/>"#,
         "down" => r#"<path d="M12 5 V18 M6 13 L12 19 L18 13"/>"#,
@@ -165,12 +166,13 @@ fn menu_row(href: &str, icon_name: &str, label: &str, end: &str) -> String {
 }
 
 /// Menu sheet: grouped rows with icons. The list scrolls when it is taller than the sheet.
-pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, display: &str) -> String {
+pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, display: &str, images: bool) -> String {
     let groups: Vec<(&str, Vec<String>)> = vec![
         ("PAGE", vec![
             menu_row("kb:reload", "reload", "Reload", ""),
             menu_row("kb:reader", "read", if reader { "Normal view" } else { "Reading view" }, ""),
             menu_row("kb:display", "text", "Display", display),
+            menu_row("kb:images", "image", "Images", if images { "On" } else { "Off" }),
             menu_row("kb:night", "moon", "Night mode", if night { "On" } else { "Off" }),
         ]),
         ("SAVE", vec![

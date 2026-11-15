@@ -20,6 +20,10 @@ workspace version is `0.1.0`.
   move up, move down and remove buttons.
 - Home sections fold away: tap the BOOKMARKS or RECENT heading to show or hide the list. The
   choice is kept in `settings.tsv`.
+- Images switch in the menu (PAGE > Images, On by default). Off answers image requests
+  without the network or the decoder, so text-only reading uses less memory; the page is
+  rebuilt when it changes. Videos are not played: the engine has no video support, with
+  images on or off.
 - Launcher test `scripts/launcher-stub-test.sh` (stub commands; six checks).
 - Unit tests for URL handling, the blocklist, image detection, title and script rules, HTML
   preparation and PNG encoding.

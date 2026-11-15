@@ -567,6 +567,7 @@ impl Browser {
         // Web pages lay out at a phone width; internal pages and chrome keep device pixels.
         let css_width = if is_web { Some(self.settings.page_width as f32) } else { None };
         let net = self.net.clone();
+        net.set_images_allowed(self.settings.images);
         let built = {
             let mut waiting = || {
                 let req = stats.requested.load(std::sync::atomic::Ordering::Relaxed);
@@ -923,6 +924,16 @@ impl Browser {
             "kb:marks" => self.open("kbp://bookmarks"),
             "kb:saved" => self.open("kbp://saved"),
             "kb:display" => self.show_sheet(Sheet::Display),
+            "kb:images" => {
+                self.settings.images = !self.settings.images;
+                self.settings.save();
+                // Rebuild the page: turning images on fetches them, turning them off drops them.
+                self.reflow();
+                // The menu shows the new state; a notice would cover it.
+                if self.sheet.is_none() {
+                    self.notify(if self.settings.images { "Images on" } else { "Images off" });
+                }
+            }
             "kb:night" => {
                 self.settings.night = !self.settings.night;
                 self.set_night(self.settings.night);
@@ -1380,15 +1391,15 @@ impl Browser {
         let tabs: Vec<(String, String)> = self.tab_labels();
         let key = match sheet {
             Sheet::Menu => format!(
-                "menu|{}|{}|{}|{}|{}|{}|{}",
-                self.reader, cache_mb, marked, self.url, self.settings.night, self.settings.text_pct, self.settings.page_width
+                "menu|{}|{}|{}|{}|{}|{}|{}|{}",
+                self.reader, cache_mb, marked, self.url, self.settings.night, self.settings.text_pct, self.settings.page_width, self.settings.images
             ),
             Sheet::Tabs => format!("tabs|{}|{:?}", self.active, tabs),
             Sheet::Display => format!("display|{}|{}|{}", self.settings.text_pct, self.settings.page_width, self.settings.night),
         };
         if self.sheet_layer.as_ref().map_or(true, |c| c.key != key) {
             let html = match sheet {
-                Sheet::Menu => ui::menu(self.reader, cache_mb, marked, self.settings.night, &self.display_summary()),
+                Sheet::Menu => ui::menu(self.reader, cache_mb, marked, self.settings.night, &self.display_summary(), self.settings.images),
                 Sheet::Tabs => ui::tabs(&tabs, self.active),
                 Sheet::Display => ui::display(self.settings.text_pct, self.settings.page_width, self.settings.night),
             };
@@ -1717,7 +1728,7 @@ pub fn width_name(width: u32) -> &'static str {
 fn stays_open(href: &str) -> bool {
     matches!(
         href,
-        "kb:night" | "kb:nighton" | "kb:nightoff" | "kb:mark" | "kb:save" | "kb:clearcache" | "kb:clearhistory" | "kb:display"
+        "kb:night" | "kb:nighton" | "kb:nightoff" | "kb:images" | "kb:mark" | "kb:save" | "kb:clearcache" | "kb:clearhistory" | "kb:display"
     ) || href.starts_with("kb:font:")
         || href.starts_with("kb:width:")
         || href.starts_with("kb:closetab:")
@@ -1738,6 +1749,8 @@ struct Settings {
     page_width: u32,
     home_bookmarks_open: bool,
     home_recent_open: bool,
+    /// Whether images are fetched and drawn. Off saves memory and bandwidth for text reading.
+    images: bool,
 }
 
 impl Settings {
@@ -1752,6 +1765,7 @@ impl Settings {
             page_width: if PAGE_WIDTHS.contains(&width) { width } else { DEFAULT_PAGE_WIDTH },
             home_bookmarks_open: flag("home_bookmarks_open", true),
             home_recent_open: flag("home_recent_open", true),
+            images: flag("images", true),
         }
     }
 
@@ -1765,6 +1779,7 @@ impl Settings {
                 ("page_width".to_string(), self.page_width.to_string()),
                 ("home_bookmarks_open".to_string(), flag(self.home_bookmarks_open)),
                 ("home_recent_open".to_string(), flag(self.home_recent_open)),
+                ("images".to_string(), flag(self.images)),
             ],
         );
     }

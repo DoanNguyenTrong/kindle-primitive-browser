@@ -189,9 +189,24 @@ quit" "[ui] action kb:display" "[ui] action kb:font:+" "[ui] action kb:width:800
 # reload 1100, reader 1200, text size 1300, night 1400, bookmark 1500, save 1600; Exit button in title (1200, 936).
 run menu_toggle_keeps_sheet "open kbp://home
 action menu
-tap 300 1400
-tap 300 1400
-quit" "[ui] sheet=Menu tap (300,1400) -> Some(\"kb:night\")" "[ui] sheet=Menu tap (300,1400) -> Some(\"kb:night\")"
+tap 300 1460
+tap 300 1460
+quit" "[ui] sheet=Menu tap (300,1460) -> Some(\"kb:night\")" "[ui] sheet=Menu tap (300,1460) -> Some(\"kb:night\")"
+
+# Images: a switch in the menu. Off skips image requests (no network, no decode); on fetches them.
+run images_on_by_default "open $BASE/images.html
+count img
+quit" "[count] img: 1"
+
+run images_off_skips_fetch "open $BASE/images.html
+action images
+count img
+quit" "[ui] action kb:images" "[net] image skipped (images off)"
+
+run menu_images_row_keeps_sheet "open $BASE/images.html
+action menu
+tap 300 1368
+quit" "[ui] sheet=Menu tap (300,1368) -> Some(\"kb:images\")" "[ui] action kb:images (sheet=Some(Menu)"
 
 run menu_navigation_closes_sheet "open kbp://home
 action menu

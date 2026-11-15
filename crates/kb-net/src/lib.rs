@@ -186,6 +186,8 @@ pub struct SyncNet {
     pub max_bytes: u64,
     stats: Arc<Stats>,
     defer_images: AtomicBool,
+    /// Off: image requests are answered empty, with no network and no decoding.
+    images_allowed: AtomicBool,
     queue: Mutex<Vec<(String, Box<dyn NetHandler>)>>,
     /// Image URLs found in the page markup (so images without a file extension are deferred too).
     image_urls: Mutex<std::collections::HashSet<String>>,
@@ -200,6 +202,7 @@ impl SyncNet {
             max_bytes,
             stats: Arc::new(Stats::default()),
             defer_images: AtomicBool::new(false),
+            images_allowed: AtomicBool::new(true),
             queue: Mutex::new(Vec::new()),
             image_urls: Mutex::new(std::collections::HashSet::new()),
         }
@@ -213,6 +216,11 @@ impl SyncNet {
 
     pub fn stats(&self) -> Arc<Stats> {
         self.stats.clone()
+    }
+
+    /// Turn image loading on or off for the pages built from now on.
+    pub fn set_images_allowed(&self, on: bool) {
+        self.images_allowed.store(on, Ordering::Release);
     }
 
     pub fn set_defer_images(&self, on: bool) {
@@ -288,6 +296,11 @@ impl NetProvider for SyncNet {
             .lock()
             .map(|set| set.contains(&url))
             .unwrap_or(false);
+        if !self.images_allowed.load(Ordering::Acquire) && (known_image || is_image_url(&url)) {
+            eprintln!("[net] image skipped (images off): {url}");
+            handler.bytes(url, Bytes::new());
+            return;
+        }
         if self.defer_images.load(Ordering::Acquire) && (known_image || is_image_url(&url)) {
             self.stats.deferred.fetch_add(1, Ordering::Relaxed);
             self.queue.lock().unwrap_or_else(|e| e.into_inner()).push((url, handler));
