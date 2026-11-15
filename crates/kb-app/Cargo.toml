@@ -1,0 +1,11 @@
+[package]
+name = "kb-app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+kb-engine = { path = "../kb-engine" }
+kb-net = { path = "../kb-net" }
+url = "2"
+png.workspace = true

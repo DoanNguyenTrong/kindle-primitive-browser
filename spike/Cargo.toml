@@ -1,0 +1,14 @@
+[package]
+name = "kb-spike"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+blitz-html = "=0.3.0-beta.4"
+blitz-dom = { version = "=0.3.0-beta.4", default-features = false, features = ["svg", "woff", "file-input"] }
+blitz-paint = "=0.3.0-beta.4"
+blitz-traits = "=0.3.0-beta.4"
+anyrender_vello_cpu = "0.18"
+png = "0.17"
+parley = { version = "=0.12.0", default-features = false, features = ["std"] }
+ureq = { version = "3", default-features = false, features = ["rustls", "gzip"] }

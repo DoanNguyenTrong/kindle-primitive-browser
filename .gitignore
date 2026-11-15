@@ -1,0 +1,12 @@
+# Build output (large; rebuilt from source)
+target/
+spike/target/
+
+# Local test and device data
+data/
+/out*.png
+/frame.png
+docs/evidence/
+
+# macOS
+.DS_Store

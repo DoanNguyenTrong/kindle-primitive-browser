@@ -1,0 +1,29 @@
+<!doctype html><html><head><meta charset="utf-8"><title>JS test</title>
+<style>body{font-family:sans-serif;font-size:36px;padding:20px} .btn{display:block;border:3px solid #000;padding:20px;margin:20px 0;border-radius:10px}</style>
+</head><body>
+<h1 id="h">Waiting</h1>
+<p id="out">no script yet</p>
+<a class="btn" id="b1" href="#">Button one (prevents navigation)</a>
+<a class="btn" id="b2" href="other.html">Button two (navigates)</a>
+<div id="list"></div>
+<script>
+  document.getElementById('h').textContent = 'Hello from JS';
+  var out = document.getElementById('out');
+  out.textContent = 'computed: ' + [1,2,3].map(function(x){return x*x}).join(',');
+  for (var i = 0; i < 3; i++) {
+    var li = document.createElement('p');
+    li.textContent = 'row ' + i;
+    document.getElementById('list').appendChild(li);
+  }
+  document.getElementById('b1').addEventListener('click', function (e) {
+    e.preventDefault();
+    document.getElementById('out').textContent = 'button one clicked at ' + 'js';
+  });
+  setTimeout(function () {
+    document.title = 'timer ran';
+    document.getElementById('h').style.color = 'black';
+    var p = document.createElement('p'); p.textContent = 'added by timer';
+    document.body.appendChild(p);
+  }, 10);
+</script>
+</body></html>

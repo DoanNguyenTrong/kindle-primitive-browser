@@ -1,0 +1,16 @@
+[package]
+name = "kb-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+blitz-html.workspace = true
+blitz-dom.workspace = true
+blitz-paint.workspace = true
+blitz-traits.workspace = true
+anyrender_vello_cpu.workspace = true
+parley.workspace = true
+kb-net = { path = "../kb-net" }
+kb-js = { path = "../kb-js" }
+url = "2"
