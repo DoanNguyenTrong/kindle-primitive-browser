@@ -166,6 +166,23 @@ action night
 action night
 quit" "[action] action"
 
+# Menu taps go through the sheet hit test. Row y positions are device pixels for the 1264x1680 screen:
+# reload 1100, reader 1200, text size 1300, night 1400, bookmark 1500, save 1600; Exit button in title (1200, 936).
+run menu_toggle_keeps_sheet "open kbp://home
+action menu
+tap 300 1400
+tap 300 1400
+quit" "[ui] sheet=Menu tap (300,1400) -> Some(\"kb:night\")" "[ui] sheet=Menu tap (300,1400) -> Some(\"kb:night\")"
+
+run menu_navigation_closes_sheet "open kbp://home
+action menu
+tap 300 1100
+quit" "[ui] action kb:reload (sheet=None"
+
+run menu_exit_button "open kbp://home
+action menu
+tap 1200 936" "exit requested"
+
 run address_bar_hint_on_home "open kbp://home
 quit" "Home | kbp://home"
 

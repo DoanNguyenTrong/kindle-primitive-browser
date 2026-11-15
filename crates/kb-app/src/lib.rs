@@ -667,7 +667,7 @@ impl Browser {
             let cached = self.ensure_sheet(sheet);
             cached.page.scroll_by(dy);
             cached.gray = cached.page.render_gray_at(0);
-            self.touch(self.height - MENU_H, self.height, Wave::Fast);
+            self.touch(self.height - MENU_H, self.height, Wave::Text);
             return;
         }
         // Scrolling down hides the bars to give the page room; scrolling up brings them back.
@@ -746,17 +746,24 @@ impl Browser {
         if let Some(sheet) = self.sheet {
             if y >= h - MENU_H as f32 {
                 let href = self.ensure_sheet(sheet).page.link_at(x, y - (h - MENU_H as f32));
+                eprintln!("[ui] sheet={sheet:?} tap ({x:.0},{y:.0}) -> {href:?}");
                 if let Some(href) = href {
-                    let keep_open = href == "kb:clearcache" || href.starts_with("kb:closetab:");
+                    // Toggles and in-sheet actions keep the menu open so the user sees the new state.
+                    // Navigation and exit close it.
+                    let keep_open = matches!(
+                        href.as_str(),
+                        "kb:night" | "kb:textsize" | "kb:mark" | "kb:save" | "kb:clearcache" | "kb:clearhistory"
+                    ) || href.starts_with("kb:closetab:");
                     if !keep_open {
                         self.sheet = None;
                     }
                     self.chrome_action(&href);
                 }
-                self.touch(self.height - MENU_H, self.height, Wave::Fast);
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
             } else {
+                eprintln!("[ui] sheet={sheet:?} dismissed by tap above sheet at y={y:.0}");
                 self.sheet = None;
-                self.touch(self.height - MENU_H, self.height, Wave::Fast);
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
             }
             return;
         }
@@ -829,6 +836,7 @@ impl Browser {
     }
 
     fn chrome_action(&mut self, href: &str) {
+        eprintln!("[ui] action {href} (sheet={:?}, page={}, url={})", self.sheet, self.page.is_some(), self.url);
         if let Some(n) = href.strip_prefix("kb:rm:").and_then(|s| s.parse::<usize>().ok()) {
             if n < self.bookmarks.len() {
                 self.bookmarks.remove(n);
@@ -864,7 +872,7 @@ impl Browser {
             "kb:newtab" => self.new_tab(),
             "kb:closemenu" => {
                 self.sheet = None;
-                self.touch(self.height - MENU_H, self.height, Wave::Fast);
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
             }
             "kb:reader" => {
                 self.toggle_reader();
@@ -895,12 +903,12 @@ impl Browser {
             "kb:clearhistory" => {
                 self.visits.clear();
                 write_pairs(&data_file("history.tsv"), &self.visits);
-                self.touch(self.height - MENU_H, self.height, Wave::Fast);
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
                 self.notify("History cleared");
             }
             "kb:clearcache" => {
                 store::cache_clear();
-                self.touch(self.height - MENU_H, self.height, Wave::Fast);
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
                 self.sheet_layer = None;
                 self.notify("Cache cleared");
             }
@@ -1079,7 +1087,7 @@ impl Browser {
         index.push((key, format!("{}\t{}", self.url, self.title())));
         write_pairs(&data_file("saved.tsv"), &index);
         self.sheet_layer = None;
-        self.touch(self.height - MENU_H, self.height, Wave::Fast);
+        self.touch(self.height - MENU_H, self.height, Wave::Text);
         self.notify("Saved for offline");
     }
 
@@ -1256,7 +1264,7 @@ impl Browser {
 
     fn show_sheet(&mut self, sheet: Sheet) {
         self.sheet = Some(sheet);
-        self.touch(self.height - MENU_H, self.height, Wave::Fast);
+        self.touch(self.height - MENU_H, self.height, Wave::Text);
     }
 
     /// The menu or tab sheet, rendered once per state.
@@ -1360,7 +1368,7 @@ impl Browser {
                 self.active -= 1;
             }
         }
-        self.touch(self.height - MENU_H, self.height, Wave::Fast);
+        self.touch(self.height - MENU_H, self.height, Wave::Text);
     }
 
     fn ensure_field(&mut self) -> &mut Cached {

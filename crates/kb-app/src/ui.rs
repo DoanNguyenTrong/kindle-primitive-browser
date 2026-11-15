@@ -149,15 +149,6 @@ pub fn bottom(back: bool, fwd: bool, marked: bool, tabs: usize) -> String {
     document("Toolbar", &body, "")
 }
 
-/// A sheet frame: a title strip, then the rows.
-fn sheet(title: &str, rows: &str) -> String {
-    let body = format!(
-        r#"<div class="sheet"><div class="sheet-title">{t}</div>{rows}</div>"#,
-        t = esc(title)
-    );
-    document(title, &body, "")
-}
-
 /// One row of the menu: icon, label, and an optional value on the right.
 fn menu_row(href: &str, icon_name: &str, label: &str, end: &str) -> String {
     format!(
@@ -188,7 +179,6 @@ pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, text_pct: u3
             menu_row("kb:home", "home", "Home", ""),
             menu_row("kb:clearcache", "trash", "Clear cache", &format!("{cache_mb} MB")),
             menu_row("kb:clearhistory", "trash", "Clear history", ""),
-            menu_row("kb:exit", "exit", "Exit browser", ""),
         ]),
     ];
     let mut out = String::new();
@@ -197,7 +187,14 @@ pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, text_pct: u3
         out.push_str(&rows.concat());
     }
     out.push_str(&format!(r#"<div style="height:24px"></div>"#));
-    sheet("Menu", &out)
+    // Exit lives in the title strip so it is always on screen, never below the fold.
+    let body = format!(
+        r#"<div class="sheet"><div class="sheet-title"><span class="sheet-name">Menu</span><a class="exit-btn" href="kb:exit">Exit browser</a></div>{out}</div>"#
+    );
+    let extra = ".sheet-title{justify-content:space-between}\
+.sheet-name{flex:1}\
+.exit-btn{display:flex;align-items:center;height:56px;padding:0 24px;border-radius:28px;background:#111;color:#fff;font-size:24px;text-decoration:none}";
+    document("Menu", &body, extra)
 }
 
 /// Tab switcher: a grid of cards (two per row), the open tab marked, and a New tab card.

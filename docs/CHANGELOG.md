@@ -10,8 +10,8 @@ workspace version is `0.1.0`.
 ### Added
 - Documentation set in `docs/`: requirements, system architecture, test and validation
   pipeline, and this changelog.
-- Desktop regression suite `scripts/desktop-regression.sh` (20 scenarios on local fixtures,
-  opt-in live-site checks with `--network`).
+- Desktop regression suite `scripts/desktop-regression.sh` (23 scenarios on local fixtures,
+  including three menu checks; opt-in live-site checks with `--network`).
 - Launcher test `scripts/launcher-stub-test.sh` (stub commands; six checks).
 - Unit tests for URL handling, the blocklist, image detection, title and script rules, HTML
   preparation and PNG encoding.
@@ -57,6 +57,15 @@ workspace version is `0.1.0`.
   (`AbortController`, `crypto`, `URL`, `TextEncoder`/`TextDecoder`, `btoa`/`atob`,
   `performance`, `matchMedia`, `ReadableStream`, `IntersectionObserver`, `DOMContentLoaded`
   and `load` events).
+- Menu on the device flashed and disappeared. Every menu choice closed the sheet, and each
+  sheet redraw used the fast DU waveform, which leaves ghosting and erased text on large
+  grey areas. Now toggles (night mode, text size, bookmark, save for offline, clear cache,
+  clear history) keep the menu open and show the new state; only navigation closes it.
+  Sheet, bar and notice redraws use GL16 (text quality) instead of DU.
+- The menu had no visible exit: the Exit row was below the fold of the 780 px sheet. Exit is
+  now a button in the menu's title strip, always on screen.
+- Device log: every sheet tap and every chrome action is logged with the sheet state, for
+  example `[ui] sheet=Menu tap (x,y) -> Some("kb:night")` and `[ui] action kb:night (sheet=…)`.
 
 ### Known issues
 - Stock Kindle keyboard: whether a native app can show it is not established.

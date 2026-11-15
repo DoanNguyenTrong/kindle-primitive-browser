@@ -9,7 +9,7 @@ run it, and what result counts as a pass.
 | Level | What it checks | Where it runs | How to run | Pass rule |
 |---|---|---|---|---|
 | L1 Unit | Pure logic: URL handling, blocklist, image detection, title and script rules, HTML preparation, PNG encoding | Computer | `cargo test --workspace --exclude kb-kindle` | All tests pass |
-| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing | Computer, against local fixtures | `scripts/desktop-regression.sh` | 20 of 20 scenarios pass |
+| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing | Computer, against local fixtures | `scripts/desktop-regression.sh` | 23 of 23 scenarios pass |
 | L3 Live-site smoke | Real sites still load (Hacker News, Wikipedia) | Computer, needs internet | `scripts/desktop-regression.sh --network` | Both pass; a failure here is reported but may be the site, not the browser |
 | L4 Launcher | The Kindle UI is stopped and restored in every exit path | Computer, with stub commands | `scripts/launcher-stub-test.sh` | 6 checks pass |
 | L5 Device validation | The product on the Kindle: touch, display, performance, memory, durability | Kindle Oasis 3 | Checklist in §3.5 | All must-pass items pass; evidence attached |
@@ -114,7 +114,7 @@ Before a device test, the build must pass in this order:
 
 1. `cargo build --release --workspace` (no warnings from the browser crates);
 2. `cargo test --workspace --exclude kb-kindle`;
-3. `scripts/desktop-regression.sh` (20 of 20);
+3. `scripts/desktop-regression.sh` (23 of 23);
 4. `cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf`;
 5. `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` reports
    `ELF 32-bit LSB executable, ARM, EABI5` and `statically linked`;
