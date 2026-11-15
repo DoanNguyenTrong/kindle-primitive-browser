@@ -92,9 +92,37 @@ stop_framework_and_mark() {
 stop_framework_and_mark
 watchdog $$ &
 
+# After the framework restarts, wait for it to come up and open the library home.
+# Without this, the framework can come back on the app drawer, which showed a blank screen.
+land_on_home() {
+    [ "$INIT" = upstart ] || return 0
+    if command -v status >/dev/null 2>&1; then
+        i=0
+        while [ $i -lt 30 ]; do
+            status lab126_gui 2>/dev/null | grep -q "start/running" && break
+            sleep 1
+            i=$((i + 1))
+        done
+        log "framework state after ${i}s: $(status lab126_gui 2>/dev/null | head -n 1)"
+    fi
+    sleep 3
+    if command -v lipc-set-prop >/dev/null 2>&1; then
+        if lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home 2>/dev/null; then
+            log "opened library home"
+        else
+            log "could not open library home"
+        fi
+    else
+        log "lipc-set-prop not found; framework opens its default screen"
+    fi
+}
+
 finish() {
     rm -f "$PIDFILE"
-    restore_framework
+    if [ -f "$MARK" ]; then
+        restore_framework
+        land_on_home
+    fi
 }
 trap 'finish; exit 0' EXIT INT TERM HUP
 

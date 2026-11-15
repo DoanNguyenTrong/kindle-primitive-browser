@@ -10,8 +10,16 @@ workspace version is `0.1.0`.
 ### Added
 - Documentation set in `docs/`: requirements, system architecture, test and validation
   pipeline, and this changelog.
-- Desktop regression suite `scripts/desktop-regression.sh` (23 scenarios on local fixtures,
-  including three menu checks; opt-in live-site checks with `--network`).
+- Desktop regression suite `scripts/desktop-regression.sh` (26 scenarios on local fixtures,
+  including menu, home, bookmark and display checks; opt-in live-site checks with `--network`).
+- Display sheet (menu > Display): text size steps (80% to 200%) with A- and A+, page width
+  (Narrow, Medium, Wide) and Day or Night. Changes apply at once and the sheet stays open.
+- Page width setting (`page_width` in `settings.tsv`). Web pages lay out at 600 CSS px
+  (Medium) by default, which fits the 7-inch panel better than the old 412 px phone width.
+- Bookmark manager (`kbp://bookmarks`): each bookmark shows its title and address, with open,
+  move up, move down and remove buttons.
+- Home sections fold away: tap the BOOKMARKS or RECENT heading to show or hide the list. The
+  choice is kept in `settings.tsv`.
 - Launcher test `scripts/launcher-stub-test.sh` (stub commands; six checks).
 - Unit tests for URL handling, the blocklist, image detection, title and script rules, HTML
   preparation and PNG encoding.
@@ -38,6 +46,12 @@ workspace version is `0.1.0`.
 - Menu and tab sheets scroll.
 
 ### Fixed
+- Following a link with the bars hidden showed no address bar, and the progress strip landed
+  on page content. The address bar now shows the new URL before the load starts, and the
+  progress strip sits under it.
+- Exit browser could leave the Kindle on the app drawer, which showed a blank screen. The
+  launcher now waits for the framework to start and then opens the library home.
+- The home screen had two search boxes (the address bar and a search pill). The pill is removed.
 - Taps on a scrolled page hit the element at the same height at the top of the page instead
   of the one under the finger (hit testing now adds the scroll offset).
 - The top of a page was hidden under the address bar; pages are now painted below it while

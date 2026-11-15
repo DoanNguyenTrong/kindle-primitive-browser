@@ -43,8 +43,11 @@ const DEFAULT_BOOKMARKS: &[(&str, &str)] = &[(
     "Phàm Nhân Tiên Duyên",
 )];
 const HISTORY_CAP: usize = 300;
-/// CSS width web pages are laid out at (a common phone width). Sites pick their mobile layout.
-const WEB_CSS_WIDTH: f32 = 412.0;
+/// Page widths the reader can pick, in CSS pixels. Narrow is a phone layout; medium suits this screen.
+pub const PAGE_WIDTHS: [u32; 3] = [412, 600, 800];
+const DEFAULT_PAGE_WIDTH: u32 = 600;
+/// Text sizes the reader steps through, in percent.
+const TEXT_STEPS: [u32; 8] = [80, 90, 100, 110, 125, 150, 175, 200];
 
 /// Progress callback during a load: `(fraction 0..1, label)`. Return `false` to
 /// cancel the wait (used when the user taps while the page is still loading).
@@ -153,6 +156,8 @@ pub struct Browser {
     last_gray: Vec<u8>,
     /// Rows of the highlight shown by `press`, to be restored on the next frame.
     pressed_rows: Option<(u32, u32)>,
+    /// Receives a frame as soon as a navigation starts, so the address bar shows the new URL while the page loads.
+    draw: Option<Box<dyn FnMut(Update)>>,
 }
 
 impl Browser {
@@ -202,7 +207,13 @@ impl Browser {
             last_image_refresh: Instant::now(),
             last_gray: Vec::new(),
             pressed_rows: None,
+            draw: None,
         }
+    }
+
+    /// Install the sink that shows a frame during a load (the driver puts it on the panel).
+    pub fn set_draw(&mut self, draw: Box<dyn FnMut(Update)>) {
+        self.draw = Some(draw);
     }
 
     /// Elements matching `selector` on the page on screen (debugging and tests).
@@ -506,6 +517,10 @@ impl Browser {
         self.chrome = true;
         self.reader = false;
         self.page_dirty = true;
+        // Show the address bar with the new URL (and the progress strip under it) before waiting,
+        // even when the bars were hidden by scrolling. Otherwise the strip lands on page content.
+        self.touch(0, self.height, Wave::Text);
+        self.emit_frame();
 
         let (html, base, is_web) = if let Some(rest) = url.strip_prefix("kbp://") {
             // Saved pages resolve relative links against their original address.
@@ -550,7 +565,7 @@ impl Browser {
         self.net.set_defer_images(true);
         let (w, h) = (self.width, self.height);
         // Web pages lay out at a phone width; internal pages and chrome keep device pixels.
-        let css_width = if is_web { Some(WEB_CSS_WIDTH) } else { None };
+        let css_width = if is_web { Some(self.settings.page_width as f32) } else { None };
         let net = self.net.clone();
         let built = {
             let mut waiting = || {
@@ -748,13 +763,7 @@ impl Browser {
                 let href = self.ensure_sheet(sheet).page.link_at(x, y - (h - MENU_H as f32));
                 eprintln!("[ui] sheet={sheet:?} tap ({x:.0},{y:.0}) -> {href:?}");
                 if let Some(href) = href {
-                    // Toggles and in-sheet actions keep the menu open so the user sees the new state.
-                    // Navigation and exit close it.
-                    let keep_open = matches!(
-                        href.as_str(),
-                        "kb:night" | "kb:textsize" | "kb:mark" | "kb:save" | "kb:clearcache" | "kb:clearhistory"
-                    ) || href.starts_with("kb:closetab:");
-                    if !keep_open {
+                    if !stays_open(&href) {
                         self.sheet = None;
                     }
                     self.chrome_action(&href);
@@ -824,9 +833,9 @@ impl Browser {
     fn set_chrome(&mut self, visible: bool) {
         if self.chrome != visible {
             self.chrome = visible;
-            // The page moves below the address bar when the bars are shown, so repaint it.
+            // The page moves below the address bar when the bars are shown, so repaint it at text quality.
             self.page_dirty = true;
-            self.touch(0, self.height, Wave::Fast);
+            self.touch(0, self.height, Wave::Text);
         }
     }
 
@@ -841,8 +850,41 @@ impl Browser {
             if n < self.bookmarks.len() {
                 self.bookmarks.remove(n);
                 write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
-                self.open("kbp://bookmarks");
+                self.refresh_internal();
             }
+            return;
+        }
+        if let Some(n) = href.strip_prefix("kb:bmup:").and_then(|s| s.parse::<usize>().ok()) {
+            if n > 0 && n < self.bookmarks.len() {
+                self.bookmarks.swap(n - 1, n);
+                write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
+                self.refresh_internal();
+            }
+            return;
+        }
+        if let Some(n) = href.strip_prefix("kb:bmdown:").and_then(|s| s.parse::<usize>().ok()) {
+            if n + 1 < self.bookmarks.len() {
+                self.bookmarks.swap(n, n + 1);
+                write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
+                self.refresh_internal();
+            }
+            return;
+        }
+        if let Some(step) = href.strip_prefix("kb:font:") {
+            self.step_text(if step == "+" { 1 } else { -1 });
+            return;
+        }
+        if let Some(w) = href.strip_prefix("kb:width:").and_then(|s| s.parse::<u32>().ok()) {
+            self.set_width(w);
+            return;
+        }
+        if let Some(which) = href.strip_prefix("kb:homeshow:") {
+            match which {
+                "bm" => self.settings.home_bookmarks_open = !self.settings.home_bookmarks_open,
+                _ => self.settings.home_recent_open = !self.settings.home_recent_open,
+            }
+            self.settings.save();
+            self.refresh_internal();
             return;
         }
         if let Some(n) = href.strip_prefix("kb:tab:").and_then(|s| s.parse::<usize>().ok()) {
@@ -880,26 +922,13 @@ impl Browser {
             "kb:save" => self.save_offline(),
             "kb:marks" => self.open("kbp://bookmarks"),
             "kb:saved" => self.open("kbp://saved"),
-            "kb:textsize" => {
-                self.settings.text_pct = match self.settings.text_pct {
-                    100 => 125,
-                    125 => 150,
-                    150 => 175,
-                    175 => 200,
-                    _ => 100,
-                };
-                self.settings.save();
-                // Text size changes the markup we lay out, so the page is rebuilt from its source.
-                let url = self.url.clone();
-                let _ = self.load(&url, Policy::Cache(Duration::from_secs(60 * 60 * 24 * 7)));
-                self.notify(&format!("Text size {}%", self.settings.text_pct));
-            }
+            "kb:display" => self.show_sheet(Sheet::Display),
             "kb:night" => {
                 self.settings.night = !self.settings.night;
-                self.settings.save();
-                self.touch(0, self.height, Wave::Flash);
-                self.notify(if self.settings.night { "Night mode on" } else { "Night mode off" });
+                self.set_night(self.settings.night);
             }
+            "kb:nighton" => self.set_night(true),
+            "kb:nightoff" => self.set_night(false),
             "kb:clearhistory" => {
                 self.visits.clear();
                 write_pairs(&data_file("history.tsv"), &self.visits);
@@ -917,6 +946,72 @@ impl Browser {
                 self.exit = true;
             }
             _ => {}
+        }
+    }
+
+    /// Move one step along `TEXT_STEPS` (-1 smaller, +1 larger) and reflow the page.
+    fn step_text(&mut self, dir: i32) {
+        let cur = TEXT_STEPS.iter().position(|&p| p == self.settings.text_pct).unwrap_or(2) as i32;
+        let next = (cur + dir).clamp(0, TEXT_STEPS.len() as i32 - 1) as usize;
+        if next as i32 == cur {
+            return;
+        }
+        self.settings.text_pct = TEXT_STEPS[next];
+        self.settings.save();
+        self.reflow();
+    }
+
+    /// Choose the page width (one of `PAGE_WIDTHS`) and reflow the page.
+    fn set_width(&mut self, width: u32) {
+        if !PAGE_WIDTHS.contains(&width) || width == self.settings.page_width {
+            return;
+        }
+        self.settings.page_width = width;
+        self.settings.save();
+        self.reflow();
+    }
+
+    /// Short label for the menu row: "Medium, 100%".
+    fn display_summary(&self) -> String {
+        format!("{}, {}%", width_name(self.settings.page_width), self.settings.text_pct)
+    }
+
+    fn set_night(&mut self, on: bool) {
+        self.settings.night = on;
+        self.settings.save();
+        self.touch(0, self.height, Wave::Flash);
+        if self.sheet.is_none() {
+            self.notify(if on { "Night mode on" } else { "Night mode off" });
+        }
+    }
+
+    /// Rebuild the page on screen from its source with the current settings, keeping the reading position.
+    fn reflow(&mut self) {
+        let url = self.url.clone();
+        if url.is_empty() || url.starts_with("kbp://") || url.starts_with("kb://") || self.source.is_empty() {
+            // Reloading an internal page clears the sheet; keep the one the user is adjusting.
+            let sheet = self.sheet;
+            self.refresh_internal();
+            self.sheet = sheet;
+            self.touch(0, self.height, Wave::Text);
+            return;
+        }
+        let scroll = self.page.as_ref().map_or(0.0, |p| p.scroll_y());
+        let source = self.source.clone();
+        self.build_page(&source, &url, true);
+        if let Some(page) = self.page.as_mut() {
+            page.scroll_by(scroll);
+        }
+        self.page_dirty = true;
+        self.touch(0, self.height, Wave::Text);
+    }
+
+    /// Re-open the internal page on screen (home, bookmarks) so it shows the latest data.
+    /// Does not add a history entry.
+    fn refresh_internal(&mut self) {
+        let url = self.url.clone();
+        if url.starts_with("kbp://") {
+            let _ = self.load(&url, Policy::Network);
         }
     }
 
@@ -1118,6 +1213,17 @@ impl Browser {
         Update { gray, width: self.width, height: self.height, rows, wave }
     }
 
+    /// Push the current screen to the draw sink now (used while a load is still running).
+    fn emit_frame(&mut self) {
+        if self.draw.is_none() {
+            return;
+        }
+        let update = self.frame();
+        if let Some(draw) = self.draw.as_mut() {
+            draw(update);
+        }
+    }
+
     /// Tap feedback: the element under (x, y) turns black at once, so the press
     /// registers before the action finishes. Returns the highlighted frame, or
     /// `None` when the point is not on a tappable element.
@@ -1273,13 +1379,18 @@ impl Browser {
         let marked = self.bookmarks.iter().any(|(u, _)| *u == self.url);
         let tabs: Vec<(String, String)> = self.tab_labels();
         let key = match sheet {
-            Sheet::Menu => format!("menu|{}|{}|{}|{}|{}|{}", self.reader, cache_mb, marked, self.url, self.settings.night, self.settings.text_pct),
+            Sheet::Menu => format!(
+                "menu|{}|{}|{}|{}|{}|{}|{}",
+                self.reader, cache_mb, marked, self.url, self.settings.night, self.settings.text_pct, self.settings.page_width
+            ),
             Sheet::Tabs => format!("tabs|{}|{:?}", self.active, tabs),
+            Sheet::Display => format!("display|{}|{}|{}", self.settings.text_pct, self.settings.page_width, self.settings.night),
         };
         if self.sheet_layer.as_ref().map_or(true, |c| c.key != key) {
             let html = match sheet {
-                Sheet::Menu => ui::menu(self.reader, cache_mb, marked, self.settings.night, self.settings.text_pct),
+                Sheet::Menu => ui::menu(self.reader, cache_mb, marked, self.settings.night, &self.display_summary()),
                 Sheet::Tabs => ui::tabs(&tabs, self.active),
+                Sheet::Display => ui::display(self.settings.text_pct, self.settings.page_width, self.settings.night),
             };
             let mut c = self.render_layer(&html, "kb://chrome/", self.width, MENU_H);
             c.key = key;
@@ -1402,21 +1513,13 @@ impl Browser {
             return self.saved_source(key);
         }
         match rest {
-            "home" => ui::home(&self.bookmarks, &self.visits),
-            "bookmarks" => {
-                let items: Vec<ui::ListItem> = self
-                    .bookmarks
-                    .iter()
-                    .enumerate()
-                    .map(|(i, (url, title))| ui::ListItem {
-                        href: url.clone(),
-                        label: if title.is_empty() { url.clone() } else { title.clone() },
-                        sub: url.clone(),
-                        action: Some((format!("kb:rm:{i}"), "Remove".to_string())),
-                    })
-                    .collect();
-                ui::list("Bookmarks", &items, "No bookmarks yet. Open Menu on a page and tap Add bookmark.")
-            }
+            "home" => ui::home(
+                &self.bookmarks,
+                &self.visits,
+                self.settings.home_bookmarks_open,
+                self.settings.home_recent_open,
+            ),
+            "bookmarks" => ui::bookmarks(&self.bookmarks),
             "saved" => {
                 let items: Vec<ui::ListItem> = read_pairs(&data_file("saved.tsv"))
                     .iter()
@@ -1495,6 +1598,7 @@ pub fn encode_png(width: u32, height: u32, gray: &[u8]) -> Result<Vec<u8>, Strin
 enum Sheet {
     Menu,
     Tabs,
+    Display,
 }
 
 /// Navigation state of a tab that is not showing.
@@ -1599,35 +1703,68 @@ pub fn normalize(input: &str) -> String {
     format!("https://{s}")
 }
 
+/// Name of a page width, as shown to the reader.
+pub fn width_name(width: u32) -> &'static str {
+    match width {
+        412 => "Narrow",
+        800 => "Wide",
+        _ => "Medium",
+    }
+}
+
+/// Sheet actions that change a setting or a list in place. The sheet stays open so the new state is visible.
+/// Navigation, tab switches and "done" close it.
+fn stays_open(href: &str) -> bool {
+    matches!(
+        href,
+        "kb:night" | "kb:nighton" | "kb:nightoff" | "kb:mark" | "kb:save" | "kb:clearcache" | "kb:clearhistory" | "kb:display"
+    ) || href.starts_with("kb:font:")
+        || href.starts_with("kb:width:")
+        || href.starts_with("kb:closetab:")
+}
+
 /// Toast position: just above the bottom toolbar.
 fn toast_rows(height: u32) -> (u32, u32) {
     let y1 = height - BOT_H - 16;
     (y1 - 88, y1)
 }
 
-/// Reading settings, kept in data/settings.tsv.
+/// Reading settings and home-screen layout, kept in data/settings.tsv.
 #[derive(Clone, Debug)]
 struct Settings {
     text_pct: u32,
     night: bool,
+    /// CSS width web pages are laid out at (one of `PAGE_WIDTHS`).
+    page_width: u32,
+    home_bookmarks_open: bool,
+    home_recent_open: bool,
 }
 
 impl Settings {
     fn load() -> Settings {
         let pairs = read_pairs(&data_file("settings.tsv"));
         let get = |k: &str| pairs.iter().find(|(key, _)| key == k).map(|(_, v)| v.clone());
+        let flag = |k: &str, default: bool| get(k).map_or(default, |v| v == "1");
+        let width = get("page_width").and_then(|v| v.parse::<u32>().ok()).unwrap_or(DEFAULT_PAGE_WIDTH);
         Settings {
             text_pct: get("text_pct").and_then(|v| v.parse().ok()).unwrap_or(100),
-            night: get("night").map_or(false, |v| v == "1"),
+            night: flag("night", false),
+            page_width: if PAGE_WIDTHS.contains(&width) { width } else { DEFAULT_PAGE_WIDTH },
+            home_bookmarks_open: flag("home_bookmarks_open", true),
+            home_recent_open: flag("home_recent_open", true),
         }
     }
 
     fn save(&self) {
+        let flag = |b: bool| if b { "1" } else { "0" }.to_string();
         write_pairs(
             &data_file("settings.tsv"),
             &[
                 ("text_pct".to_string(), self.text_pct.to_string()),
-                ("night".to_string(), if self.night { "1" } else { "0" }.to_string()),
+                ("night".to_string(), flag(self.night)),
+                ("page_width".to_string(), self.page_width.to_string()),
+                ("home_bookmarks_open".to_string(), flag(self.home_bookmarks_open)),
+                ("home_recent_open".to_string(), flag(self.home_recent_open)),
             ],
         );
     }

@@ -13,7 +13,7 @@
 //! here for this browser. Colours are black on white plus light grey fills and dividers;
 //! e-ink shows mid-greys only roughly, so no meaning rests on a tint alone.
 
-use crate::{esc, Key, Layer, BOT_H, KB_Y, MENU_H, TOP_H};
+use crate::{esc, width_name, Key, Layer, BOT_H, KB_Y, MENU_H, PAGE_WIDTHS, TOP_H};
 
 /// Line icon from the set below, at `size` device pixels.
 pub fn icon(name: &str, size: u32) -> String {
@@ -41,6 +41,10 @@ pub fn icon(name: &str, size: u32) -> String {
         "exit" => r#"<path d="M14 5 H19 V19 H14"/><path d="M4 12 H15 M11 8 L15 12 L11 16"/>"#,
         "newtab" => r#"<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M12 9 V15 M9 12 H15"/>"#,
         "check" => r#"<path d="M5 12.5 L10 17 L19 7"/>"#,
+        "chev-up" => r#"<path d="M6 15 L12 9 L18 15"/>"#,
+        "chev-down" => r#"<path d="M6 9 L12 15 L18 9"/>"#,
+        "up" => r#"<path d="M12 19 V6 M6 11 L12 5 L18 11"/>"#,
+        "down" => r#"<path d="M12 5 V18 M6 13 L12 19 L18 13"/>"#,
         _ => "",
     };
     format!(
@@ -161,12 +165,12 @@ fn menu_row(href: &str, icon_name: &str, label: &str, end: &str) -> String {
 }
 
 /// Menu sheet: grouped rows with icons. The list scrolls when it is taller than the sheet.
-pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, text_pct: u32) -> String {
+pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, display: &str) -> String {
     let groups: Vec<(&str, Vec<String>)> = vec![
         ("PAGE", vec![
             menu_row("kb:reload", "reload", "Reload", ""),
             menu_row("kb:reader", "read", if reader { "Normal view" } else { "Reading view" }, ""),
-            menu_row("kb:textsize", "text", "Text size", &format!("{text_pct}%")),
+            menu_row("kb:display", "text", "Display", display),
             menu_row("kb:night", "moon", "Night mode", if night { "On" } else { "Off" }),
         ]),
         ("SAVE", vec![
@@ -195,6 +199,41 @@ pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, text_pct: u3
 .sheet-name{flex:1}\
 .exit-btn{display:flex;align-items:center;height:56px;padding:0 24px;border-radius:28px;background:#111;color:#fff;font-size:24px;text-decoration:none}";
     document("Menu", &body, extra)
+}
+
+/// Display sheet: text size steps, page width, and day or night. Changes apply at once and the
+/// sheet stays open, so the reader can compare settings on the page.
+pub fn display(text_pct: u32, width: u32, night: bool) -> String {
+    let seg = |href: &str, label: &str, on: bool| {
+        format!(r#"<a class="segbtn{}" href="{href}">{label}</a>"#, if on { " on" } else { "" })
+    };
+    let widths: String = PAGE_WIDTHS
+        .iter()
+        .map(|&w| seg(&format!("kb:width:{w}"), width_name(w), w == width))
+        .collect();
+    let body = format!(
+        r#"<div class="sheet"><div class="sheet-title"><span class="sheet-name">Display</span><a class="pill" href="kb:closemenu">Done</a></div>
+<div class="section">TEXT SIZE</div>
+<div class="stepper"><a class="step" href="kb:font:-" aria-label="Smaller text">A-</a><span class="stepval">{text_pct}%</span><a class="step" href="kb:font:+" aria-label="Larger text">A+</a></div>
+<div class="section">PAGE WIDTH</div>
+<div class="seg">{widths}</div>
+<div class="note">Narrow suits phone layouts. Medium fits this screen. Wide shows more text per line.</div>
+<div class="section">THEME</div>
+<div class="seg">{day}{dark}</div></div>"#,
+        day = seg("kb:nightoff", "Day", !night),
+        dark = seg("kb:nighton", "Night", night),
+    );
+    let extra = ".sheet-title{justify-content:space-between}\
+.sheet-name{flex:1}\
+.pill{display:flex;align-items:center;height:56px;padding:0 28px;border-radius:28px;background:#111;color:#fff;font-size:24px;text-decoration:none}\
+.stepper{display:flex;align-items:center;gap:20px;margin:0 24px;height:104px}\
+.step{display:flex;align-items:center;justify-content:center;width:160px;height:96px;border:2px solid #111;border-radius:16px;font-size:36px;font-weight:bold;color:#111;text-decoration:none}\
+.stepval{flex:1;text-align:center;font-size:40px;color:#111}\
+.seg{display:flex;gap:12px;margin:0 24px;height:88px}\
+.segbtn{flex:1;display:flex;align-items:center;justify-content:center;border:2px solid #111;border-radius:16px;font-size:30px;color:#111;text-decoration:none}\
+.segbtn.on{background:#111;color:#fff}\
+.note{margin:14px 24px 0;font-size:22px;color:#777;line-height:1.35}";
+    document("Display", &body, extra)
 }
 
 /// Tab switcher: a grid of cards (two per row), the open tab marked, and a New tab card.
@@ -332,43 +371,119 @@ pub fn list(title: &str, items: &[ListItem], empty: &str) -> String {
     document(title, &body, "")
 }
 
-/// Home screen: a search pill, bookmark tiles in a three-column grid, and recent pages.
-pub fn home(bookmarks: &[(String, String)], recent: &[(String, String)]) -> String {
-    let tiles: String = bookmarks
-        .iter()
-        .map(|(u, t)| {
-            let title = if t.is_empty() { u.as_str() } else { t.as_str() };
-            let letter = title.chars().next().unwrap_or('•').to_uppercase().to_string();
-            format!(
-                r#"<a class="tile" href="{u}"><span class="ico">{l}</span><span class="t">{t}</span></a>"#,
-                u = esc(u),
-                l = esc(&letter),
-                t = esc(title),
-            )
-        })
-        .collect();
-    let recent_rows: String = recent
-        .iter()
-        .take(6)
-        .map(|(u, t)| {
-            let label = if t.is_empty() { u.as_str() } else { t.as_str() };
-            format!(
-                r#"<a class="row" href="{u}"><span class="lead">{i}</span><span class="main">{l}<span class="sub">{u}</span></span></a>"#,
-                i = icon("menu-page", 30),
-                u = esc(u),
-                l = esc(label),
-            )
-        })
-        .collect();
-    let recent_empty = if recent.is_empty() { r#"<div class="page"><div class="empty">Pages you visit appear here.</div></div>"# } else { "" };
+/// Collapsible section heading on the home screen: title, count, and a chevron. Tapping toggles it.
+fn section_head(title: &str, count: usize, href: &str, open: bool) -> String {
+    format!(
+        r#"<a class="sechead" href="{h}"><span class="sechead-title">{t}</span><span class="sechead-count">{count}</span><span class="grow"></span>{c}</a>"#,
+        h = esc(href),
+        t = esc(title),
+        c = icon(if open { "chev-up" } else { "chev-down" }, 32),
+    )
+}
+
+/// Home screen: the address bar is the only search box. Bookmark tiles in a grid and recent pages,
+/// each section with a heading that shows or hides it.
+pub fn home(bookmarks: &[(String, String)], recent: &[(String, String)], bm_open: bool, recent_open: bool) -> String {
+    let bm_body = if !bm_open {
+        String::new()
+    } else if bookmarks.is_empty() {
+        r#"<div class="empty">Bookmarks you add appear here.</div>"#.to_string()
+    } else {
+        let tiles: String = bookmarks
+            .iter()
+            .map(|(u, t)| {
+                let title = if t.is_empty() { u.as_str() } else { t.as_str() };
+                let letter = title.chars().next().unwrap_or('•').to_uppercase().to_string();
+                format!(
+                    r#"<a class="tile" href="{u}"><span class="ico">{l}</span><span class="t">{t}</span></a>"#,
+                    u = esc(u),
+                    l = esc(&letter),
+                    t = esc(title),
+                )
+            })
+            .collect();
+        format!(r#"<div class="grid">{tiles}</div>"#)
+    };
+    let recent_body = if !recent_open {
+        String::new()
+    } else if recent.is_empty() {
+        r#"<div class="empty">Pages you visit appear here.</div>"#.to_string()
+    } else {
+        recent
+            .iter()
+            .take(6)
+            .map(|(u, t)| {
+                let label = if t.is_empty() { u.as_str() } else { t.as_str() };
+                format!(
+                    r#"<a class="row" href="{u}"><span class="lead">{i}</span><span class="main">{l}<span class="sub">{u}</span></span></a>"#,
+                    i = icon("menu-page", 30),
+                    u = esc(u),
+                    l = esc(label),
+                )
+            })
+            .collect()
+    };
     let body = format!(
-        r#"<div class="page"><a class="search" href="kb:addr">{s}Search or type an address</a>
-<div class="section-title">BOOKMARKS</div><div class="grid">{tiles}</div>
-<div class="section-title">RECENT</div></div>{recent_rows}{recent_empty}
+        r#"<div class="page">{bm_head}{bm_body}{rec_head}</div>{recent_body}
 <div class="page"><div class="actions"><a class="btn" href="kbp://bookmarks">All bookmarks</a><a class="btn" href="kbp://saved">Saved pages</a></div></div>"#,
-        s = icon("lock", 26).replace("lock", "info"),
+        bm_head = section_head("BOOKMARKS", bookmarks.len(), "kb:homeshow:bm", bm_open),
+        rec_head = section_head("RECENT", recent.len(), "kb:homeshow:recent", recent_open),
     );
-    document("Home", &body, "")
+    let extra = ".sechead{display:flex;align-items:center;gap:16px;height:72px;margin-top:20px;font-size:24px;letter-spacing:1px;color:#555;text-decoration:none}\
+.sechead-count{font-size:22px;color:#888}\
+.grow{flex:1}";
+    document("Home", &body, extra)
+}
+
+/// Bookmark manager: every bookmark with open, move up, move down and remove.
+pub fn bookmarks(items: &[(String, String)]) -> String {
+    let head = format!(
+        r#"<div class="page"><h1>Bookmarks</h1><div class="sub-head">{n} saved</div></div>"#,
+        n = items.len()
+    );
+    let body = if items.is_empty() {
+        format!(
+            r#"{head}<div class="page"><div class="empty">No bookmarks yet. Open Menu on a page and tap Add bookmark.</div></div>"#
+        )
+    } else {
+        let rows: String = items
+            .iter()
+            .enumerate()
+            .map(|(i, (url, title))| {
+                let label = if title.is_empty() { url.as_str() } else { title.as_str() };
+                let letter = label.chars().next().unwrap_or('•').to_uppercase().to_string();
+                let up = if i > 0 {
+                    format!(r#"<a class="bm-btn" href="kb:bmup:{i}" aria-label="Move up">{}</a>"#, icon("up", 30))
+                } else {
+                    format!(r#"<span class="bm-btn off">{}</span>"#, icon("up", 30))
+                };
+                let down = if i + 1 < items.len() {
+                    format!(r#"<a class="bm-btn" href="kb:bmdown:{i}" aria-label="Move down">{}</a>"#, icon("down", 30))
+                } else {
+                    format!(r#"<span class="bm-btn off">{}</span>"#, icon("down", 30))
+                };
+                format!(
+                    r#"<div class="bm"><a class="bm-main" href="{u}"><span class="bm-badge">{l}</span><span class="bm-text"><span class="bm-title">{t}</span><span class="sub">{u}</span></span></a><div class="bm-actions">{up}{down}<a class="bm-btn" href="kb:rm:{i}" aria-label="Remove">{trash}</a></div></div>"#,
+                    u = esc(url),
+                    l = esc(&letter),
+                    t = esc(label),
+                    trash = icon("trash", 30),
+                )
+            })
+            .collect();
+        format!("{head}{rows}")
+    };
+    let extra = ".sub-head{font-size:22px;color:#777;margin-top:-12px;padding-bottom:12px}\
+.bm{display:flex;align-items:center;gap:16px;min-height:112px;padding:14px 20px 14px 24px;border-bottom:1px solid #e6e6e6}\
+.bm-main{flex:1;min-width:0;display:flex;align-items:center;gap:20px;color:#111;text-decoration:none}\
+.bm-badge{flex:0 0 auto;width:64px;height:64px;border-radius:32px;background:#111;color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px}\
+.bm-text{min-width:0;display:flex;flex-direction:column;gap:6px}\
+.bm-title{font-size:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.bm-text .sub{font-size:22px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.bm-actions{display:flex;gap:8px;flex:0 0 auto}\
+.bm-btn{display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:2px solid #111;border-radius:14px;color:#111;text-decoration:none}\
+.bm-btn.off{border-color:#e0e0e0;color:#c4c4c4}";
+    document("Bookmarks", &body, extra)
 }
 
 /// Full-page error with the reason and the actions that can help.

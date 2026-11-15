@@ -362,6 +362,10 @@ fn main() {
         true
     }));
 
+    // A navigation paints the address bar at once (the browser calls this before fetching).
+    let draw_state = shared.clone();
+    b.set_draw(Box::new(move |u| draw_state.borrow_mut().display.show(&u)));
+
     let t0 = Instant::now();
     b.open(&start);
     let u = b.frame();

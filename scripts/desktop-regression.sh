@@ -111,7 +111,7 @@ text p
 quit" "received | $BASE/submit" "POST city=hi"
 
 run keyboard_caret_insert "open kbp://home
-tapsel a[href=\"kb:addr\"]
+action addr
 tapkey a
 tapkey b
 tapkey c
@@ -154,6 +154,23 @@ run tabs_sheet_opens "open kbp://home
 action tabs
 quit" "[action] action"
 
+# Home has one search box (the address bar); its sections fold away.
+run home_single_search_box "open kbp://home
+count .search
+quit" "[count] .search: 0"
+
+run home_section_toggle "open kbp://home
+action homeshow:bm
+count .tile
+quit" "[count] .tile: 0" "[ui] action kb:homeshow:bm"
+
+run bookmark_reorder_and_remove "open $BASE/plain.html
+action mark
+action marks
+action bmdown:0
+action rm:0
+quit" "[ui] action kb:bmdown:0" "[ui] action kb:rm:0"
+
 # --- menu and settings ------------------------------------------------------------
 run menu_scrolls "open kbp://home
 action menu
@@ -161,10 +178,12 @@ scroll 500
 quit" "[scroll] action"
 
 run text_size_and_night "open $BASE/plain.html
-action textsize
-action night
-action night
-quit" "[action] action"
+action display
+action font:+
+action width:800
+action nighton
+action nightoff
+quit" "[ui] action kb:display" "[ui] action kb:font:+" "[ui] action kb:width:800" "[ui] action kb:nightoff"
 
 # Menu taps go through the sheet hit test. Row y positions are device pixels for the 1264x1680 screen:
 # reload 1100, reader 1200, text size 1300, night 1400, bookmark 1500, save 1600; Exit button in title (1200, 936).
