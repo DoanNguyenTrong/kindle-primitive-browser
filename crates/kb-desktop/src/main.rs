@@ -85,6 +85,10 @@ fn main() -> io::Result<()> {
                 let y: f32 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
                 timed("longpress", &mut b, &out, |b| b.long_press(x, y));
             }
+            "edge" => {
+                // A swipe down from the top edge (the device's quick settings gesture).
+                timed("edge", &mut b, &out, |b| b.quick_settings());
+            }
             "tabstep" => {
                 let dir: i32 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(1);
                 timed("tabstep", &mut b, &out, |b| b.tab_step(dir));

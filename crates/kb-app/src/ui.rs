@@ -13,7 +13,7 @@
 //! here for this browser. Colours are black on white plus light grey fills and dividers;
 //! e-ink shows mid-greys only roughly, so no meaning rests on a tint alone.
 
-use crate::{esc, width_name, Key, Layer, BOT_H, PAGE_WIDTHS, SHEET_TITLE_H, TOP_H};
+use crate::{esc, width_name, DeviceStatus, Key, Layer, BOT_H, LEVEL_MAX, PAGE_WIDTHS, QUICK_H, SHEET_TITLE_H, TOP_H};
 
 /// Line icon from the set below, at `size` device pixels.
 pub fn icon(name: &str, size: u32) -> String {
@@ -28,6 +28,7 @@ pub fn icon(name: &str, size: u32) -> String {
         "info" => r#"<circle cx="12" cy="12" r="8"/><path d="M12 11 V16"/><circle cx="12" cy="8" r="0.8" fill="currentColor"/>"#,
         "tab" => r#"<rect x="4" y="4" width="16" height="16" rx="3"/>"#,
         "plus" => r#"<path d="M12 5 V19 M5 12 H19"/>"#,
+        "minus" => r#"<path d="M5 12 H19"/>"#,
         "close" => r#"<path d="M6 6 L18 18 M18 6 L6 18"/>"#,
         "home" => r#"<path d="M4 11 L12 4 L20 11"/><path d="M6 10 V20 H18 V10"/>"#,
         "menu-page" => r#"<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M8 9 H16 M8 13 H16 M8 17 H13"/>"#,
@@ -42,6 +43,10 @@ pub fn icon(name: &str, size: u32) -> String {
         "newtab" => r#"<rect x="4" y="5" width="16" height="14" rx="2"/><path d="M12 9 V15 M9 12 H15"/>"#,
         "check" => r#"<path d="M5 12.5 L10 17 L19 7"/>"#,
         "image" => r#"<rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M5 17 L10 13 L13 16 L15 14 L19 18"/>"#,
+        "sun" => r#"<circle cx="12" cy="12" r="4"/><path d="M12 2 V5 M12 19 V22 M2 12 H5 M19 12 H22 M4.9 4.9 L7 7 M17 17 L19.1 19.1 M4.9 19.1 L7 17 M17 7 L19.1 4.9"/>"#,
+        "warm" => r#"<circle cx="12" cy="12" r="8"/><path d="M12 4 A8 8 0 0 1 12 20 Z" fill="currentColor"/>"#,
+        "wifi" => r#"<path d="M2.5 9 A14 14 0 0 1 21.5 9"/><path d="M5.5 12.5 A9.5 9.5 0 0 1 18.5 12.5"/><path d="M8.5 16 A5 5 0 0 1 15.5 16"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/>"#,
+        "battery" => r#"<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5 V13.5"/><rect x="5.5" y="9.5" width="9" height="5" fill="currentColor" stroke="none"/>"#,
         "chev-up" =>r#"<path d="M6 15 L12 9 L18 15"/>"#,
         "chev-down" => r#"<path d="M6 9 L12 15 L18 9"/>"#,
         "up" => r#"<path d="M12 19 V6 M6 11 L12 5 L18 11"/>"#,
@@ -250,6 +255,75 @@ pub fn display(text_pct: u32, width: u32, night: bool) -> String {
 .segbtn.on{background:#111;color:#fff}\
 .note{margin:14px 24px 0;font-size:22px;color:#777;line-height:1.35}";
     document("Display", &body, extra)
+}
+
+/// One row of the quick settings panel: a level bar of 25 steps with − and + at its ends.
+/// Each step is a link (`kb:<action>:<level>`), so a tap sets that level.
+fn level_row(icon_name: &str, label: &str, action: &str, level: u32) -> String {
+    let steps: String = (0..=LEVEL_MAX)
+        .map(|n| {
+            let on = if n <= level { " on" } else { "" };
+            format!(r#"<a class="qp-step{on}" href="kb:{action}:{n}" aria-label="{label} {n}"></a>"#)
+        })
+        .collect();
+    let down = level.saturating_sub(1);
+    let up = (level + 1).min(LEVEL_MAX);
+    format!(
+        r#"<div class="qp-row"><div class="qp-head"><span class="qp-ico">{i}</span><span class="qp-label">{label}</span><span class="qp-value">{level}</span></div><div class="qp-levels"><a class="qp-nudge" href="kb:{action}:{down}" aria-label="{label} less">{minus}</a><div class="qp-bar">{steps}</div><a class="qp-nudge" href="kb:{action}:{up}" aria-label="{label} more">{plus}</a></div></div>"#,
+        i = icon(icon_name, 40),
+        minus = icon("minus", 36),
+        plus = icon("plus", 36),
+    )
+}
+
+/// The quick settings panel that the Kindle draws from the top edge: the clock and battery, Wi-Fi,
+/// the brightness and warmth bars, and a handle to close it.
+pub fn quick_panel(s: &DeviceStatus) -> String {
+    let battery = match s.battery {
+        Some(p) => format!("{p}%{}", if s.charging { " charging" } else { "" }),
+        None => String::new(),
+    };
+    let wifi_label = if s.wifi_on { "Wi-Fi on" } else { "Wi-Fi off" };
+    let wifi_state = if s.wifi_on && !s.wifi_state.is_empty() { s.wifi_state.as_str() } else { "" };
+    let body = format!(
+        r#"<div class="quick"><div class="qp-top"><div class="qp-time"><span class="qp-clock">{clock}</span><span class="qp-date">{date}</span></div><div class="qp-batt">{bi}<span>{battery}</span></div></div>
+<a class="qp-wifi" href="kb:wifi"><span class="qp-ico">{wi}</span><span class="qp-wlabel">{wifi_label}</span><span class="qp-wstate">{wifi_state}</span><span class="qp-switch{on}">{switch}</span></a>
+{brightness}
+{warmth}
+<a class="qp-handle" href="kb:quickclose">{up}<span>Close</span></a></div>"#,
+        clock = esc(&s.clock),
+        date = esc(&s.date),
+        bi = icon("battery", 36),
+        battery = esc(&battery),
+        wi = icon("wifi", 40),
+        on = if s.wifi_on { " on" } else { "" },
+        switch = if s.wifi_on { "On" } else { "Off" },
+        brightness = level_row("sun", "Brightness", "bright", s.brightness),
+        warmth = level_row("warm", "Warmth", "warm", s.warmth),
+        up = icon("chev-up", 32),
+    );
+    let extra = ".quick{height:{QUICK_H}px;background:#fff;border-bottom:3px solid #111;padding:0;display:flex;flex-direction:column}\
+.qp-top{display:flex;align-items:center;justify-content:space-between;height:120px;padding:0 28px}\
+.qp-time{display:flex;flex-direction:column}\
+.qp-clock{font-size:52px;font-weight:bold;color:#111}\
+.qp-date{font-size:24px;color:#555}\
+.qp-batt{display:flex;align-items:center;gap:12px;font-size:28px;color:#111}\
+.qp-wifi{display:flex;align-items:center;gap:16px;height:84px;margin:0 28px;padding:0 4px;border-top:1px solid #d8d8d8;border-bottom:1px solid #d8d8d8;color:#111;text-decoration:none;font-size:28px}\
+.qp-wlabel{flex:1}\
+.qp-wstate{font-size:24px;color:#666}\
+.qp-switch{min-width:88px;height:56px;line-height:56px;text-align:center;border:2px solid #111;border-radius:28px;font-size:24px}\
+.qp-switch.on{background:#111;color:#fff}\
+.qp-row{padding:12px 28px 4px}\
+.qp-head{display:flex;align-items:center;gap:14px;height:56px;color:#111;font-size:28px}\
+.qp-label{flex:1}\
+.qp-value{font-size:24px;color:#666;min-width:60px;text-align:right}\
+.qp-levels{display:flex;align-items:center;gap:10px;height:84px}\
+.qp-nudge{display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:2px solid #111;border-radius:36px;font-size:40px;color:#111;text-decoration:none}\
+.qp-bar{display:flex;align-items:stretch;gap:3px;flex:1;height:72px}\
+.qp-step{flex:1;height:72px;border:2px solid #bdbdbd;border-radius:6px;background:#fff;text-decoration:none}\
+.qp-step.on{background:#111;border-color:#111}\
+.qp-handle{display:flex;flex-direction:column;align-items:center;justify-content:center;height:72px;margin-top:auto;border-top:1px solid #d8d8d8;color:#111;text-decoration:none;font-size:22px;letter-spacing:1px}".replace("{QUICK_H}", &QUICK_H.to_string());
+    document("Quick settings", &body, &extra)
 }
 
 /// Tab switcher: a grid of cards (two per row), the open tab marked, and a New tab card.

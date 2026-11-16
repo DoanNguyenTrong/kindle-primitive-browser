@@ -5,6 +5,13 @@ use super::*;
 
 impl Browser {
     pub fn scroll(&mut self, dy: f64) {
+        // A swipe while the quick settings panel is open dismisses it, as on the Kindle.
+        if self.quick && !self.keyboard {
+            if dy.abs() > 8.0 {
+                self.close_quick();
+            }
+            return;
+        }
         if self.keyboard {
             // The suggestion list scrolls; the address bar and the keys stay put.
             let cached = self.ensure_suggestions();
@@ -80,6 +87,17 @@ impl Browser {
     /// Handle a tap at device pixel (x, y).
     pub fn tap(&mut self, x: f32, y: f32) {
         let h = self.height as f32;
+        if self.quick && !self.keyboard {
+            // Links inside the panel act (brightness, warmth, Wi-Fi, close); a tap below it closes it.
+            if y < QUICK_H as f32 {
+                if let Some(href) = self.ensure_quick().page.link_at(x, y) {
+                    self.chrome_action(&href);
+                }
+            } else {
+                self.close_quick();
+            }
+            return;
+        }
         if self.keyboard {
             if y < TOP_H as f32 {
                 let field_box = self.ensure_field().page.link_box(x, y);

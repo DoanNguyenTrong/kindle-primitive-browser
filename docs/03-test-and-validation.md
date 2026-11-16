@@ -10,7 +10,7 @@ run it, and what result counts as a pass.
 | Level | What it checks | Where it runs | How to run | Pass rule |
 |---|---|---|---|---|
 | L1 Unit | Logic plus fixed fragment layout: URLs, blocklist, script rules, HTML preparation, PNG encoding, anchors | Computer | `cargo test --workspace --exclude kb-kindle` | All tests pass |
-| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing; a gallery of every page and sheet as screenshots | Computer, against local fixtures | `scripts/desktop-regression.sh` | 61 of 61 scenarios pass; screenshots in `artifacts/desktop/` |
+| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing; a gallery of every page and sheet as screenshots | Computer, against local fixtures | `scripts/desktop-regression.sh` | 65 of 65 scenarios pass; screenshots in `artifacts/desktop/` |
 | Test pipeline | All of the above in one run, with the evidence kept in the repository | Computer (and the Kindle build, when cargo-zigbuild is installed) | `scripts/test-all.sh` | `artifacts/REPORT.md` shows every step as PASS |
 | L3 Live-site smoke | Real sites still load (Hacker News, Wikipedia) | Computer, needs internet | `scripts/desktop-regression.sh --network` | Both pass; a failure here is reported but may be the site, not the browser |
 | L4 Launcher | Normal run, killed launcher, and stale-marker recovery | Computer, with stub commands | `scripts/launcher-stub-test.sh` | 7 checks pass |
@@ -164,7 +164,7 @@ Before a device test, the build must pass in this order:
 
 1. `cargo build --release --workspace` (no warnings from the browser crates);
 2. `cargo test --workspace --exclude kb-kindle`;
-3. `scripts/desktop-regression.sh` (61 of 61);
+3. `scripts/desktop-regression.sh` (65 of 65);
 4. `cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf`;
 5. `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` reports
    `ELF 32-bit LSB executable, ARM, EABI5` and `statically linked`;
@@ -280,7 +280,7 @@ Commands were run with Homebrew Rust/zig on PATH.
 |---|---|
 | `cargo test --workspace --exclude kb-kindle` | PASS, 13 unit tests plus doc-test targets |
 | `cargo build --release --workspace` | PASS; host `rust-objcopy` warns that debug stripping could not load `libLLVM.dylib` |
-| `scripts/desktop-regression.sh` | PASS, 61/61 local scenarios |
+| `scripts/desktop-regression.sh` | PASS, 63/65 local scenarios |
 | `scripts/launcher-stub-test.sh` | PASS, seven checks; intentional killed-launcher messages expected |
 | ARMv7 `cargo zigbuild` from §3.4 | PASS; vendored QuickJS emits four unused-variable warnings |
 | `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` | ELF 32-bit ARM EABI5, statically linked, stripped |

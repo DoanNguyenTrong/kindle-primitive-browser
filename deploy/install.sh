@@ -23,7 +23,16 @@ file "$BIN" | grep -q "ARM" || { echo "not an ARM binary: $BIN" >&2; exit 1; }
 
 mkdir -p "$KINDLE/browser"
 cp "$BIN" "$KINDLE/browser/kb-kindle"
-cp "$HERE/deploy/Browser.sh" "$KINDLE/documents/$LAUNCHER"
+# The launcher carries its icon in the header, as KOReader's does ("# Icon: data:image/png;base64,...").
+# The Kindle library reads the icon from there.
+ICON_PNG="$HERE/assets/primitive-launcher-icon.png"
+[ -f "$ICON_PNG" ] || { echo "icon not found: $ICON_PNG" >&2; exit 1; }
+ICON_LINE="# Icon: data:image/png;base64,$(base64 < "$ICON_PNG" | tr -d '\n')"
+TMP=$(mktemp)
+awk -v icon="$ICON_LINE" '{ print } /^# Author:/ { print icon }' "$HERE/deploy/Browser.sh" > "$TMP"
+cp "$TMP" "$KINDLE/documents/$LAUNCHER"
+rm -f "$TMP"
+chmod 700 "$KINDLE/documents/$LAUNCHER" 2>/dev/null || true
 # The logo, for the launcher icon.
 cp "$HERE/assets/primitive-icon.png" "$KINDLE/browser/icon.png"
 # Our launcher under its old name would show a second entry in the library.

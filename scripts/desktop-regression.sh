@@ -341,6 +341,46 @@ tapsel a#rel
 assert url $BASE/plain.html
 quit" "[assert] url $BASE/plain.html: PASS"
 
+# Quick settings: the Kindle's own panel drops from the top edge (a swipe down from the top edge).
+run quick_panel_from_top_edge "open $BASE/plain.html
+edge
+visible a[href=\"kb:quickclose\"]
+visible a[href=\"kb:bright:20\"]
+visible a[href=\"kb:warm:5\"]
+quit" "[visible] a[href=\"kb:quickclose\"]: 1" "[visible] a[href=\"kb:bright:20\"]: 1" "[visible] a[href=\"kb:warm:5\"]: 1"
+
+# Its controls act and the panel stays open; the handle closes it.
+run quick_panel_controls "open $BASE/plain.html
+edge
+tapsel a[href=\"kb:bright:20\"]
+tapsel a[href=\"kb:warm:5\"]
+tapsel a[href=\"kb:wifi\"]
+visible a[href=\"kb:quickclose\"]
+tapsel a[href=\"kb:quickclose\"]
+visible a[href=\"kb:quickclose\"]
+quit" "[visible] a[href=\"kb:quickclose\"]: 1" "[visible] a[href=\"kb:quickclose\"]: 0"
+
+# A tap below the panel closes it, and a swipe closes it too.
+run quick_panel_dismissed_by_tap_and_swipe "open $BASE/plain.html
+edge
+tap 600 1500
+visible a[href=\"kb:quickclose\"]
+edge
+scroll 200
+visible a[href=\"kb:quickclose\"]
+quit" "[visible] a[href=\"kb:quickclose\"]: 0"
+
+# The keyboard's third layer: "#+=" from the symbols layer, and "123" back.
+run keyboard_third_symbol_layer "open kbp://home
+action addr
+tapsel a[href=\"kb:sym\"]
+visible a[href=\"kb:c:8364\"]
+tapsel a[href=\"kb:more\"]
+visible a[href=\"kb:c:8364\"]
+tapsel a[href=\"kb:sym\"]
+visible a[href=\"kb:c:8364\"]
+quit" "[visible] a[href=\"kb:c:8364\"]: 0" "[visible] a[href=\"kb:c:8364\"]: 1"
+
 # DOM behaviour that pages depend on: appending, text nodes, copies, fragments, fetch with a body.
 run dom_api_for_pages "open $BASE/dom_api.html
 text #out

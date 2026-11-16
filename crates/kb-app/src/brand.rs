@@ -5,6 +5,14 @@ use std::sync::OnceLock;
 /// The browser's name, as shown to the reader.
 pub const NAME: &str = "Primitive Browser";
 
+/// The build's version (the workspace version). Every device build bumps the patch number.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// The menu's title strip: the name and the version, e.g. "Menu  v0.2.0".
+pub fn menu_title() -> String {
+    format!("Menu  v{VERSION}")
+}
+
 /// The logo (PNG). It is part of the binary, so it shows offline.
 const LOGO_PNG: &[u8] = include_bytes!("../../../assets/primitive-icon.png");
 
@@ -34,6 +42,12 @@ fn base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn menu_title_shows_the_version() {
+        assert!(menu_title().starts_with("Menu  v"));
+        assert!(menu_title().ends_with(VERSION));
+    }
 
     #[test]
     fn base64_matches_the_standard_encoding() {

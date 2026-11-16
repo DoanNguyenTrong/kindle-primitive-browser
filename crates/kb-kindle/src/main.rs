@@ -20,6 +20,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod device;
+
 use kb_app::{encode_png, Browser, Update, Wave, PROGRESS_H, TOP_H};
 
 const DIR: &str = "/mnt/us/browser";
@@ -71,6 +73,8 @@ const _: () = assert!(std::mem::size_of::<InputEvent>() == 16);
 
 #[derive(Debug)]
 enum Ev {
+    /// A swipe down that starts at the top edge: quick settings.
+    QuickSettings,
     Tap(f32, f32),
     LongTap(f32, f32),
     TabStep(i32),
@@ -79,6 +83,9 @@ enum Ev {
     Back,
     Forward,
 }
+
+/// A touch that starts this close to the top edge (device pixels) is an edge swipe.
+const EDGE_H: f32 = 40.0;
 
 fn log(msg: &str) {
     eprintln!("[kb] {msg}");
@@ -155,6 +162,9 @@ fn touch_loop(path: String, tx: Sender<Ev>) {
                             Some(Ev::Tap(end.0, end.1))
                         } else if still {
                             Some(Ev::LongTap(end.0, end.1))
+                        } else if sy < EDGE_H && dy > 120.0 && dy.abs() > dx.abs() * 1.5 {
+                            // A swipe down from the very top edge opens quick settings.
+                            Some(Ev::QuickSettings)
                         } else if on_bar && dx.abs() > 180.0 && dx.abs() > dy.abs() * 1.5 {
                             // Swipe along the address bar moves between tabs.
                             Some(Ev::TabStep(if dx > 0.0 { -1 } else { 1 }))
@@ -366,6 +376,9 @@ fn main() {
     let draw_state = shared.clone();
     b.set_draw(Box::new(move |u| draw_state.borrow_mut().display.show(&u)));
 
+    // The Kindle's own frontlight, warmth, battery and Wi-Fi for the quick settings panel.
+    b.set_device(Box::new(device::KindleDevice));
+
     let t0 = Instant::now();
     b.open(&start);
     let u = b.frame();
@@ -404,6 +417,7 @@ fn main() {
             match ev {
                 Ev::Tap(x, y) => b.tap(x, y),
                 Ev::LongTap(x, y) => b.long_press(x, y),
+                Ev::QuickSettings => b.quick_settings(),
                 Ev::TabStep(dir) => b.tab_step(dir),
                 Ev::Scroll(dy) => b.scroll(dy),
                 Ev::Page(d) => b.page_step(d),

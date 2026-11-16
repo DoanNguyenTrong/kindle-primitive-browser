@@ -55,7 +55,9 @@ impl Browser {
         {
             self.images_seen = done;
             self.last_image_refresh = Instant::now();
-            self.touch(0, self.height, Wave::Text);
+            // The last image arriving ends the load: refresh the whole screen once, cleanly.
+            let wave = if self.images_loading() { Wave::Text } else { Wave::Flash };
+            self.touch(0, self.height, wave);
             self.page_dirty = true;
             return Some(self.frame());
         }
@@ -160,6 +162,11 @@ impl Browser {
             let bottom = self.ensure_bottom().gray.clone();
             blit(&mut out, w, h - BOT_H, &bottom, BOT_H);
         }
+        // The quick settings panel drops from the top edge over the bars and the page.
+        if self.quick && !self.keyboard {
+            let panel = self.ensure_quick().gray.clone();
+            blit(&mut out, w, 0, &panel, QUICK_H);
+        }
         if let Some((message, _)) = self.toast.clone() {
             let layer = self.toast_layer(&message);
             let (y0, _) = toast_rows(self.height);
@@ -257,6 +264,18 @@ impl Browser {
         self.bottom.as_mut().expect("bottom layer")
     }
 
+    /// The quick settings panel, rendered again only when a device value changes.
+    pub(super) fn ensure_quick(&mut self) -> &mut Cached {
+        let key = format!("{:?}", self.device_status);
+        if self.quick_layer.as_ref().map_or(true, |c| c.key != key) {
+            let html = ui::quick_panel(&self.device_status);
+            let mut c = self.render_layer(&html, "kb://chrome/", self.width, QUICK_H);
+            c.key = key;
+            self.quick_layer = Some(c);
+        }
+        self.quick_layer.as_mut().expect("quick layer")
+    }
+
     pub(super) fn show_sheet(&mut self, sheet: Sheet) {
         self.sheet = Some(sheet);
         self.touch(self.height - MENU_H, self.height, Wave::Text);
@@ -311,7 +330,7 @@ impl Browser {
 
     pub(super) fn ensure_sheet_header(&mut self, sheet: Sheet) -> &mut Cached {
         let title = match sheet {
-            Sheet::Menu => "Menu".to_string(),
+            Sheet::Menu => crate::brand::menu_title(),
             Sheet::Tabs => format!(
                 "{} open {}",
                 self.tabs.len(),

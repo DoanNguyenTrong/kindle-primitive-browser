@@ -8,6 +8,8 @@ pub(crate) enum Layer {
     Lower,
     Upper,
     Symbols,
+    /// Less common symbols and currency signs (the "#+=" layer).
+    More,
 }
 
 pub(crate) struct Key {
@@ -76,7 +78,19 @@ pub(crate) fn keyboard_rows(layer: Layer) -> Vec<Vec<Key>> {
                 "`~_+-=[]{}".chars().map(char_key).collect(),
                 "\\|/:;\"<>".chars().map(char_key).collect(),
                 row4,
-                bottom(key("ABC", "kb:abc", 1.5)),
+                bottom(key("#+=", "kb:more", 1.5)),
+            ]
+        }
+        Layer::More => {
+            let mut row4 = vec![key("ABC", "kb:abc", 1.5)];
+            row4.extend("@&$".chars().map(char_key));
+            row4.push(key("Del", "kb:del", 1.5));
+            vec![
+                "[]{}#%^*+=".chars().map(char_key).collect(),
+                "_\\|~<>€£¥•".chars().map(char_key).collect(),
+                ".,?!'\"/:;".chars().map(char_key).collect(),
+                row4,
+                bottom(key("123", "kb:sym", 1.5)),
             ]
         }
     }
@@ -144,6 +158,11 @@ impl Browser {
                 }
                 "kb:sym" => {
                     self.layer = Layer::Symbols;
+                    layer_changed = true;
+                    field_changed = false;
+                }
+                "kb:more" => {
+                    self.layer = Layer::More;
                     layer_changed = true;
                     field_changed = false;
                 }

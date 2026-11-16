@@ -3,11 +3,24 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.0`.
+workspace version is `0.1.3`.
 
 ## [Unreleased]
 
 ### Added
+- Quick settings panel, drawn from the top like the Kindle's own: a swipe down that starts within
+  40 px of the top edge opens it. It shows the clock and date, battery, Wi-Fi (an On/Off switch),
+  frontlight brightness and warmth as 25-step bars with − and + at the ends, and a Close handle.
+  A tap on a bar or a button sets it and the panel stays open; a tap below the panel or a swipe
+  closes it. The device values come from the Kindle's system properties (`lipc-get-prop` /
+  `lipc-set-prop`, read in `crates/kb-kindle/src/device.rs`); the desktop driver shows defaults
+  and its `edge` command opens the panel. The lipc names follow KOReader and are not yet
+  confirmed on the device.
+- Keyboard third layer "#+=": the symbols layer has a "#+=" key; the new layer adds brackets,
+  `# % ^ * + =`, `_ \ | ~ < > € £ ¥ •`, and more punctuation, with "123" and "ABC" to switch back.
+- The menu title shows the build version ("Menu  v0.1.1"). Each device build is a new patch
+  version (for example 0.1.0 -> 0.1.1); `scripts/build-device.sh` bumps it, builds, and installs,
+  and undoes the bump if the install fails.
 - Long-list tests: 40 seeded bookmarks (the `SEED` option of the regression runner) cover the
   address suggestions (scroll, and a tap far down the list), filtering by typing, the home grid
   scrolled to its last tile, and the bookmark manager (scroll, and remove a row far down).
@@ -33,7 +46,7 @@ workspace version is `0.1.0`.
   visible controls; failures terminate the scenario.
 - Documentation set in `docs/`: requirements, system architecture, test and validation
   pipeline, and this changelog.
-- Desktop regression suite `scripts/desktop-regression.sh` (61 scenarios on local fixtures,
+- Desktop regression suite `scripts/desktop-regression.sh` (65 scenarios on local fixtures,
   including 13 navigation/state/sheet cases; opt-in live-site checks with `--network`).
 - Display sheet (menu > Display): text size steps (80% to 200%) with A- and A+, page width
   (Narrow, Medium, Wide) and Day or Night. Changes apply at once and the sheet stays open.
@@ -56,6 +69,10 @@ workspace version is `0.1.0`.
 - Device log now records resident memory (`rss`) after each action.
 
 ### Changed
+- A finished page gets one full refresh of the screen (GC16 flash), and so does the last image
+  arriving. There is no manual refresh control in the browser.
+- The address field and the keyboard redraw with the text waveform (GL16) instead of DU. DU left
+  old text and the caret behind on e-ink.
 - Renamed to **Primitive Browser**: library launcher `documents/Primitive Browser.sh` (the
   installer removes the old `KB Browser.sh`), user agent `PrimitiveBrowser/0.1`, and the logo
   (`assets/primitive-icon.png`, from `primitive-ai-website/public/prai-icon.png`) on the home
@@ -79,7 +96,7 @@ workspace version is `0.1.0`.
 - `kb-app/src/lib.rs` (about 2,100 lines) is split into modules by responsibility: `browser/`
   (state, navigation, loading, tabs, input, actions, library, keyboard, frame, internal pages, driver),
   `settings.rs`, `storage.rs`, `html.rs`, `addr.rs` and `layout.rs`. The behaviour is unchanged:
-  all 61 regression scenarios and the unit tests pass. The layout is described in
+  all 65 regression scenarios and the unit tests pass. The layout is described in
   `docs/02-architecture.md` §2.12.
 - Web pages use the selected 412/600/800 CSS-px width and scale to the panel; default is
   Medium (600). JavaScript viewport dimensions, pixel ratio and basic width queries agree
@@ -205,6 +222,8 @@ workspace version is `0.1.0`.
   example `[ui] sheet=Menu tap (x,y) -> Some("kb:night")` and `[ui] action kb:night (sheet=…)`.
 
 ### Known issues
+- Whether the screen sometimes stays stale after a page loads is not confirmed. The full refresh
+  on load is the control in place; it needs checking on the device.
 - A site's own poll widget (tinhte.vn) still reports `Could not find job from response`: its
   batching client does not find its job in the batch reply. The article renders; only the poll
   is affected. Not investigated further.

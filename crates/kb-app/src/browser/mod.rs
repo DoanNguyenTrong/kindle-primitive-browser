@@ -13,6 +13,7 @@ use kb_engine::Page;
 use kb_net::{store, Policy, SyncNet};
 
 use crate::addr::*;
+use crate::device::{DeviceControl, DeviceStatus, NoDevice};
 use crate::html::*;
 use crate::layout::*;
 use crate::settings::*;
@@ -82,7 +83,7 @@ pub struct Browser {
     suggestions: Vec<(String, String, bool)>,
     field: Option<Cached>,
     suggest: Option<Cached>,
-    keys: [Option<Cached>; 3],
+    keys: [Option<Cached>; 4],
 
     top: Option<Cached>,
     bottom: Option<Cached>,
@@ -103,6 +104,12 @@ pub struct Browser {
     pressed_rows: Option<(u32, u32)>,
     /// Receives a frame as soon as a navigation starts, so the address bar shows the new URL while the page loads.
     draw: Option<Box<dyn FnMut(Update)>>,
+    /// The quick settings panel (dropped from the top edge) is open.
+    quick: bool,
+    quick_layer: Option<Cached>,
+    /// The device's own controls, and the values the panel last showed.
+    device: Box<dyn DeviceControl>,
+    device_status: DeviceStatus,
 }
 
 impl Browser {
@@ -143,7 +150,7 @@ impl Browser {
             suggestions: Vec::new(),
             field: None,
             suggest: None,
-            keys: [None, None, None],
+            keys: [None, None, None, None],
             top: None,
             bottom: None,
             sheet_layer: None,
@@ -158,12 +165,22 @@ impl Browser {
             last_gray: Vec::new(),
             pressed_rows: None,
             draw: None,
+            quick: false,
+            quick_layer: None,
+            device: Box::new(NoDevice),
+            device_status: DeviceStatus::unavailable(),
         }
     }
 
     /// Install the sink that shows a frame during a load (the driver puts it on the panel).
     pub fn set_draw(&mut self, draw: Box<dyn FnMut(Update)>) {
         self.draw = Some(draw);
+    }
+
+    /// Install the device's controls (the Kindle driver does this); the panel then shows its values.
+    pub fn set_device(&mut self, mut device: Box<dyn DeviceControl>) {
+        self.device_status = device.status();
+        self.device = device;
     }
 
     /// Install the progress/cancel callback used while pages load.

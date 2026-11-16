@@ -14,6 +14,11 @@ impl Browser {
     /// while one is shown, otherwise the page. `None` if nothing matches.
     pub fn screen_center(&mut self, selector: &str) -> Option<(f32, f32)> {
         let centre = |(x, y, w, h): (f32, f32, f32, f32)| (x + w / 2.0, y + h / 2.0);
+        if self.quick && !self.keyboard {
+            // The panel covers the top of the screen, so only its own elements count.
+            let (x, y) = centre(self.ensure_quick().page.element_box(selector)?);
+            return Some((x, y));
+        }
         if self.keyboard {
             if let Some(b) = self.ensure_field().page.element_box(selector) {
                 return Some(centre(b));
@@ -117,6 +122,8 @@ impl Browser {
         let h = self.height as f32;
         let (top, bottom) = if self.keyboard {
             (0.0, h)
+        } else if self.quick {
+            (0.0, QUICK_H as f32)
         } else if self.sheet.is_some() {
             (h - MENU_H as f32, h)
         } else {

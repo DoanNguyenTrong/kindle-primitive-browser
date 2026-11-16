@@ -1,6 +1,7 @@
 //! Browser actions named by `kb:` links: the menu, the Display settings, and the toolbar.
 
 use super::*;
+use crate::LEVEL_MAX;
 
 pub(super) fn stays_open(href: &str) -> bool {
     matches!(
@@ -131,6 +132,25 @@ impl Browser {
             "kb:marks" => self.open("kbp://bookmarks"),
             "kb:saved" => self.open("kbp://saved"),
             "kb:display" => self.show_sheet(Sheet::Display),
+            "kb:quickclose" => self.close_quick(),
+            "kb:wifi" => {
+                let on = !self.device_status.wifi_on;
+                self.device.set_wifi(on);
+                self.device_status = self.device.status();
+                self.quick_changed();
+            }
+            _ if href.starts_with("kb:bright:") || href.starts_with("kb:warm:") => {
+                let (which, level) = href.trim_start_matches("kb:").split_once(':').unwrap_or(("", "0"));
+                let level = level.parse::<u32>().unwrap_or(0).min(LEVEL_MAX);
+                if which == "bright" {
+                    self.device.set_brightness(level);
+                    self.device_status.brightness = level;
+                } else {
+                    self.device.set_warmth(level);
+                    self.device_status.warmth = level;
+                }
+                self.quick_changed();
+            }
             "kb:images" => {
                 self.settings.images = !self.settings.images;
                 self.settings.save();
@@ -203,6 +223,29 @@ impl Browser {
             width_name(self.settings.page_width),
             self.settings.text_pct
         )
+    }
+
+    /// Open or close the quick settings panel (a swipe down from the top edge).
+    pub fn quick_settings(&mut self) {
+        if self.quick {
+            self.close_quick();
+        } else if !self.keyboard {
+            self.device_status = self.device.status();
+            self.quick = true;
+            self.quick_layer = None;
+            self.touch(0, self.height, Wave::Text);
+        }
+    }
+
+    pub(super) fn close_quick(&mut self) {
+        self.quick = false;
+        self.touch(0, self.height, Wave::Text);
+    }
+
+    /// The panel changed a value: redraw it.
+    fn quick_changed(&mut self) {
+        self.quick_layer = None;
+        self.touch(0, QUICK_H, Wave::Text);
     }
 
     pub(super) fn set_night(&mut self, on: bool) {

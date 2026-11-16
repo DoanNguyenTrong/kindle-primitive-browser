@@ -48,7 +48,7 @@ and display drivers differ.
 | `kb-engine` | library | One page: parse, run scripts, lay out, paint to gray, scroll, hit test, forms, reader view | `blitz-html`, `blitz-dom`, `blitz-paint`, `blitz-traits`, `anyrender_vello_cpu`, `parley`, `kb-net`, `kb-js`, `url` |
 | `kb-app` | library | The browser: navigation, history, tabs, bookmarks, saved pages, settings, notices, the keyboard and sheets, and the layout system in `ui.rs` | `kb-engine`, `kb-net`, `url`, `png` |
 | `kb-desktop` | binary | Computer driver: reads commands from stdin, writes PNG frames, reports timings; used by the test suite | `kb-app` |
-| `kb-kindle` | binary | Device driver: evdev input, touch gestures, FBInk display, memory log | `kb-app`, `libc` |
+| `kb-kindle` | binary | Device driver: evdev input, touch gestures, FBInk display, memory log, and the Kindle's own controls (frontlight, warmth, battery, Wi-Fi, clock) through `lipc` for the quick settings panel (`device.rs`) | `kb-app`, `libc` |
 
 Workspace root: `Cargo.toml` (members, shared dependency versions, the vendored patch).
 
@@ -240,6 +240,7 @@ re-exports the API the drivers use. `Browser` is defined in `browser/mod.rs`; ea
 | `html.rs` | Escaping, and the page-level CSS added from the settings |
 | `addr.rs` | Typed input to URL, URL splitting, same-document comparison |
 | `layout.rs` | Layout constants in device pixels, and notice placement |
-| `ui.rs` | The stylesheet and the HTML for every screen the browser draws itself (§2.6) |
+| `ui.rs` | The stylesheet and the HTML for every screen the browser draws itself (§2.6), including the quick settings panel |
+| `device.rs` | `DeviceControl` trait and `DeviceStatus`: the device-agnostic data behind the quick settings panel; `NoDevice` for the desktop |
 
 Each module starts with a `//!` line that states its job. Tests sit beside the code they check.
