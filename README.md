@@ -39,7 +39,7 @@ rendering server while you browse.
 </table>
 
 <sub>Screenshots are from the desktop build of the same engine. The quick settings preview shows
-placeholder values, not a real battery.</sub>
+demo values (a 72% battery and a fixed clock), not a real device.</sub>
 
 ## Why this exists
 

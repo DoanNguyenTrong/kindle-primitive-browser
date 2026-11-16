@@ -13,7 +13,29 @@ use std::{
     time::{Duration, Instant},
 };
 
-use kb_app::{encode_png, Browser, Update};
+use kb_app::{encode_png, Browser, DeviceControl, DeviceStatus, Update};
+
+/// A demo device for screenshots: a battery at 72%, Wi-Fi on, and a fixed clock. Turned on with
+/// `KB_DEMO_DEVICE=1`, so the quick settings panel shows what a Kindle shows. Changes are not kept.
+struct DemoDevice;
+
+impl DeviceControl for DemoDevice {
+    fn status(&mut self) -> DeviceStatus {
+        DeviceStatus {
+            brightness: 12,
+            warmth: 6,
+            battery: Some(72),
+            charging: false,
+            wifi_on: true,
+            wifi_state: "connected".into(),
+            clock: "10:38".into(),
+            date: "Mon 16 Nov".into(),
+        }
+    }
+    fn set_brightness(&mut self, _level: u32) {}
+    fn set_warmth(&mut self, _level: u32) {}
+    fn set_wifi(&mut self, _on: bool) {}
+}
 
 const W: u32 = 1264;
 const H: u32 = 1680;
@@ -21,6 +43,9 @@ const H: u32 = 1680;
 fn main() -> io::Result<()> {
     let out = std::env::var("KB_OUT").unwrap_or_else(|_| "out.png".into());
     let mut b = Browser::new(W, H);
+    if std::env::var_os("KB_DEMO_DEVICE").is_some() {
+        b.set_device(Box::new(DemoDevice));
+    }
     if std::env::var("KB_PROGRESS").is_ok() {
         // Print the progress the device draws under the address bar (throttled).
         let mut last = Instant::now() - Duration::from_secs(1);
