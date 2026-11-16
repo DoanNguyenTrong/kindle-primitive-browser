@@ -66,20 +66,28 @@ impl Change {
         match self {
             // The DNS changes take the same steps as the Kindle's set-dns.sh: the system partition is made
             // writable for the copy and read-only again afterwards.
+            // Public DNS also patches the Wi-Fi DHCP script, so the setting survives reconnects and restarts.
+            // The original script is saved once to /mnt/us/browser/dns; Restore DNS puts it back.
             Change::PublicDns => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
                 "elif [ ! -f /mnt/us/resolv.conf.original ] && ! cp /etc/resolv.conf /mnt/us/resolv.conf.original; then ",
                 "echo 'could not save the original DNS settings: nothing changed'; ",
                 "else printf 'nameserver 1.1.1.1\\nnameserver 8.8.8.8\\n' > /mnt/us/resolv.conf.new && ",
-                "mount -o remount,rw / && { cp /mnt/us/resolv.conf.new /etc/resolv.conf; r=$?; sync; ",
-                "mount -o remount,ro /; echo \"copy status $r\"; }; rm -f /mnt/us/resolv.conf.new; fi; ",
+                "mount -o remount,rw / && { cp /mnt/us/resolv.conf.new /etc/resolv.conf; cp /mnt/us/resolv.conf.new /tmp/resolv.conf; ",
+                "mkdir -p /mnt/us/browser/dns; ",
+                "[ -f /mnt/us/browser/dns/default.script.original ] || cp /usr/share/udhcpc/default.script /mnt/us/browser/dns/default.script.original; ",
+                "sed 's/for i in $dns ; do/for i in 1.1.1.1 8.8.8.8 ; do/' /usr/share/udhcpc/default.script > /tmp/default.script.new && ",
+                "grep -q 'for i in 1.1.1.1 8.8.8.8' /tmp/default.script.new && cat /tmp/default.script.new > /usr/share/udhcpc/default.script; ",
+                "r=$?; rm -f /tmp/default.script.new; sync; mount -o remount,ro /; echo \"copy status $r\"; }; ",
+                "rm -f /mnt/us/resolv.conf.new; fi; ",
                 "id -u; cat /etc/resolv.conf"
             ),
             Change::RestoreDns => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
                 "elif [ ! -f /mnt/us/resolv.conf.original ]; then echo 'no saved original DNS settings: nothing changed'; ",
-                "else mount -o remount,rw / && { cp /mnt/us/resolv.conf.original /etc/resolv.conf; r=$?; sync; ",
-                "mount -o remount,ro /; echo \"copy status $r\"; }; fi; ",
+                "else mount -o remount,rw / && { cp /mnt/us/resolv.conf.original /etc/resolv.conf; ",
+                "[ -f /mnt/us/browser/dns/default.script.original ] && cp /mnt/us/browser/dns/default.script.original /usr/share/udhcpc/default.script; ",
+                "r=$?; sync; mount -o remount,ro /; echo \"copy status $r\"; }; fi; ",
                 "id -u; cat /etc/resolv.conf"
             ),
             // Starts the server with the root password already set on the device (set once, with `passwd`).

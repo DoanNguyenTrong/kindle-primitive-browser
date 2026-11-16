@@ -701,7 +701,7 @@ pub fn diagnostics(report: Option<&[Report]>, fix: Option<&Report>, ssh_on: bool
     let intro = if report.is_some() {
         String::new()
     } else {
-        r#"<div class="empty">Runs read-only checks on this device: the shell, system, storage, Wi-Fi, DNS, the hosts file, browser files and processes. Set public DNS points this device at 1.1.1.1 and 8.8.8.8 (the original settings are saved first); Restore DNS puts them back. Start SSH runs an SSH server on port 2222. Set SSH password changes the root password; type it on the keyboard (starts as 123456), 6 to 64 letters, digits, or - _ . @ # % + = !.</div>"#.to_string()
+        r#"<div class="empty">Runs read-only checks on this device: the shell, system, storage, Wi-Fi, DNS, the hosts file, browser files and processes. Set public DNS points this device at 1.1.1.1 and 8.8.8.8, also after Wi-Fi reconnects and restarts (the originals are saved first); Restore DNS puts them back. Start SSH runs an SSH server on port 2222. Set SSH password changes the root password; type it on the keyboard (starts as 123456), 6 to 64 letters, digits, or - _ . @ # % + = !.</div>"#.to_string()
     };
     let ssh_label = if ssh_on { "Stop SSH" } else { "Start SSH" };
     let actions = format!(
