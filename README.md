@@ -8,7 +8,8 @@ The Mac builds and tests the program. No computer or rendering server is needed 
 
 Released baseline: **0.1.0**. The current **Unreleased navigation milestone** improves reading
 position, tabs, article section links and sheet controls. Desktop and ARMv7 builds pass;
-current device validation is pending. See the [goal and roadmap](docs/04-roadmap.md).
+recorded hardware observations are in [device notes](docs/device-notes.md), while full release
+validation remains pending. See the [goal and roadmap](docs/04-roadmap.md).
 
 ## Current capabilities
 
@@ -58,6 +59,10 @@ move a screen. Long press a link to open a new tab. Tap above a sheet to dismiss
 keeps Exit visible; exiting saves the tabs before returning to the Kindle library. On startup,
 saved tabs take priority over `start.txt`, which is the fallback for a new session.
 
+The launcher keeps the Kindle framework running and hides its status bar while browsing.
+Exit restores the status bar and opens the library. If that mode leaves a blank library,
+create `/mnt/us/browser/stop-framework` to use the older stop/restart fallback.
+
 ## Develop and test
 
 ```sh
@@ -65,7 +70,7 @@ cargo test --workspace --exclude kb-kindle
 cargo build --release -p kb-desktop
 scripts/desktop-regression.sh       # 67 local scenarios with screenshots; --network adds two live-site checks
 scripts/test-all.sh                 # every check, with evidence kept in artifacts/ (see REPORT.md)
-scripts/launcher-stub-test.sh       # seven launcher checks with stubs
+scripts/launcher-stub-test.sh       # ten launcher checks with stubs
 ```
 
 Drive the same engine on the Mac and inspect the frame PNG:

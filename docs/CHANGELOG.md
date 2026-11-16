@@ -3,15 +3,21 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.10`.
+workspace version is `0.1.14`.
 
 ## [Unreleased]
 
 ### Added
-- Touch and the page-turn buttons follow the screen's own direction (FBInk's framebuffer rotation,
-  `currentRota` from `fbink -e`), read once a second, not the physical tilt: a tilt while lying on a
-  bed does not flip the controls. The orientation-sensor jitter seen in the device log (values 16
-  and 17 alternating) is gone. The log records `turn at start` and each `display turned` change.
+- Touch and the page-turn buttons follow the orientation the framework shows (its accelerometer
+  property, `com.lab126.winmgr`), read once a second. FBInk's framebuffer rotation is logged beside
+  it, so a disagreement with the text on screen shows in the log (`display turned: rota N
+  (framework …, framebuffer …)`). A tilt while lying on a bed does not flip the controls.
+- The browser runs over the Kindle's UI without restarting the framework (its restart took about 9 s
+  in the device log): the status bar is hidden while it runs, and on exit it is shown again and the
+  library is opened. The window manager is left running, since pausing it stopped the framework from
+  turning the screen. The library open is retried every quarter second instead of
+  waiting a fixed time. If the library shows a blank screen, create the file `stop-framework` in the
+  browser folder on the Kindle: the launcher then goes back to stopping the framework.
 - Left-handed (upside-down) portrait: touch and the page-turn buttons follow the turn, in our own
   driver (KOReader does not do this for this model). The touch controller reports in the panel's
   upright frame, so each touch is turned when the Kindle is upside down, and the top and bottom
@@ -81,7 +87,7 @@ workspace version is `0.1.10`.
   without the network or the decoder, so text-only reading uses less memory; the page is
   rebuilt when it changes. Videos are not played: the engine has no video support, with
   images on or off.
-- Launcher test `scripts/launcher-stub-test.sh` (stub commands; seven checks).
+- Launcher test `scripts/launcher-stub-test.sh` (stub commands; ten checks).
 - Unit tests for URL handling, the blocklist, image detection, title and script rules, HTML
   preparation and PNG encoding.
 - Desktop driver commands: `tapsel`, `longsel`, `tapkey`, `text`, `where`, `linkat`,
@@ -206,7 +212,7 @@ workspace version is `0.1.10`.
 - Keyboard caret regression now submits to a local form fixture instead of a live search
   service. The saved-page regression opens the saved document and checks its title.
 - Regression output directories are created when `KB_TEST_OUT` is supplied. Launcher checks
-  now wait for the stale-marker recovery run and verify its marker is cleared (seven checks),
+  now wait for the stale-marker recovery run and verify its marker is cleared (ten checks),
   avoiding cleanup while that run is still writing logs.
 - Following a link with the bars hidden showed no address bar, and the progress strip landed
   on page content. The address bar now shows the new URL before the load starts, and the

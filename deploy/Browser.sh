@@ -3,15 +3,16 @@
 # Author: Primitive AI
 # DontUseFBInk
 #
-# Library launcher. Stops the Kindle UI framework while the browser runs, runs
-# the browser under a crash watchdog, and restores the framework on every way out.
+# Library launcher. Runs the browser over the Kindle's own UI: the status bar is hidden while
+# the framework and window manager keep running. Exit restores the status bar and opens the library.
+# If the file "stop-framework" exists in the browser folder, the whole framework is stopped instead
+# (the older, slower way back to the library).
 #
-# Restore is guaranteed by a watchdog process: if this launcher is killed (for
-# example when the USB cable is unplugged or the process is reaped), the watchdog
-# still stops the browser and starts the framework again. A marker file records a
-# framework that was left stopped, so the next launch restores it first.
+# A watchdog process outlives this launcher. If the launcher is killed (for example when the USB cable
+# is unplugged), the watchdog stops the browser and gives the UI back. A marker file records what was
+# changed, so the next launch gives the UI back first.
 #
-# Files live in $KB_DIR (default /mnt/us/browser): kb-kindle, start.txt, log.
+# Files live in $KB_DIR (default /mnt/us/browser): kb-kindle, start.txt, log, marker.
 
 DIR=${KB_DIR:-/mnt/us/browser}
 LOG=$DIR/log-browser.txt
@@ -34,6 +35,18 @@ else
     INIT=upstart
 fi
 
+# The mode: "keep" (the default) or "stop" (when the flag file exists).
+if [ -f "$DIR/stop-framework" ]; then
+    MODE=stop
+else
+    MODE=keep
+fi
+
+# Sleep for a short time (microseconds where the device has usleep).
+pause_us() {
+    usleep "$1" 2>/dev/null || sleep 1
+}
+
 framework_start() {
     if [ "$INIT" = sysv ]; then
         (cd / && /etc/init.d/framework start)
@@ -48,25 +61,72 @@ framework_stop() {
     else
         trap "" TERM
         stop lab126_gui
-        usleep 1250000 2>/dev/null || sleep 1
+        pause_us 1250000
         trap - TERM
     fi
 }
 
-# Start the framework again, once, and clear the marker.
-restore_framework() {
-    if [ -f "$MARK" ]; then
-        log "restoring framework ($INIT)"
-        framework_start
-        rm -f "$MARK"
+# Take the UI for the browser. The marker is written first, so a launcher killed here is still restored.
+stop_ui() {
+    if [ "$MODE" = stop ]; then
+        log "stopping framework ($INIT)"
+        echo stop > "$MARK"
+        framework_stop
+    else
+        # Only the status bar is hidden. The window manager keeps running: pausing it stopped the
+        # framework from turning the screen, so the text did not follow the Kindle's turn.
+        log "hiding the status bar"
+        echo keep > "$MARK"
+        lipc-set-prop com.lab126.pillow disableEnablePillow disable 2>/dev/null
     fi
 }
 
-# A framework left stopped by an earlier run (killed launcher) is restored first.
-restore_framework
+# Give the UI back: undo what the launcher changed. A marker without a mode (from an earlier version)
+# means the framework was stopped.
+restore_ui() {
+    [ -f "$MARK" ] || return 0
+    case "$(head -n 1 "$MARK" 2>/dev/null)" in
+        keep)
+            log "restoring the status bar"
+            lipc-set-prop com.lab126.pillow disableEnablePillow enable 2>/dev/null
+            ;;
+        *)
+            log "restoring framework ($INIT)"
+            t0=$(date +%s)
+            framework_start
+            log "framework start returned after $(( $(date +%s) - t0 ))s"
+            ;;
+    esac
+    rm -f "$MARK"
+}
 
-# Watchdog: outlives this launcher. Once the launcher is gone it stops the browser
-# (if still running) and restores the framework. Survives the launcher being killed.
+# Open the library. With the UI kept running this succeeds at once. When the framework was stopped it
+# may need a moment to come up, so retry every quarter second (up to 10 s) rather than wait first.
+land_on_home() {
+    [ "$INIT" = upstart ] || return 0
+    if ! command -v lipc-set-prop >/dev/null 2>&1; then
+        log "lipc-set-prop not found; the UI opens its default screen"
+        return 0
+    fi
+    i=0
+    while [ $i -lt 40 ]; do
+        if lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home 2>/dev/null; then
+            log "opened library home after $i tries"
+            return 0
+        fi
+        pause_us 250000
+        i=$((i + 1))
+    done
+    log "could not open library home"
+}
+
+# A UI left changed by an earlier run is given back first.
+restore_ui
+
+stop_ui
+
+# Watchdog: outlives this launcher. Once the launcher is gone it stops the browser (if still running),
+# gives the UI back and opens the library.
 watchdog() {
     trap '' HUP INT
     lpid=$1
@@ -77,50 +137,17 @@ watchdog() {
         sleep 1
     fi
     if [ -f "$MARK" ]; then
-        echo "[watchdog $(date '+%H:%M:%S')] launcher gone, restoring framework" >> "$LOG"
-        framework_start
-        rm -f "$MARK"
+        echo "[watchdog $(date '+%H:%M:%S')] launcher gone, giving the UI back" >> "$LOG"
+        restore_ui
+        land_on_home
     fi
 }
-
-stop_framework_and_mark() {
-    log "stopping framework ($INIT)"
-    touch "$MARK"
-    framework_stop
-}
-
-stop_framework_and_mark
 watchdog $$ &
-
-# After the framework restarts, wait for it to come up and open the library home.
-# Without this, the framework can come back on the app drawer, which showed a blank screen.
-land_on_home() {
-    [ "$INIT" = upstart ] || return 0
-    if command -v status >/dev/null 2>&1; then
-        i=0
-        while [ $i -lt 30 ]; do
-            status lab126_gui 2>/dev/null | grep -q "start/running" && break
-            sleep 1
-            i=$((i + 1))
-        done
-        log "framework state after ${i}s: $(status lab126_gui 2>/dev/null | head -n 1)"
-    fi
-    sleep 3
-    if command -v lipc-set-prop >/dev/null 2>&1; then
-        if lipc-set-prop com.lab126.appmgrd start app://com.lab126.booklet.home 2>/dev/null; then
-            log "opened library home"
-        else
-            log "could not open library home"
-        fi
-    else
-        log "lipc-set-prop not found; framework opens its default screen"
-    fi
-}
 
 finish() {
     rm -f "$PIDFILE"
     if [ -f "$MARK" ]; then
-        restore_framework
+        restore_ui
         land_on_home
     fi
 }

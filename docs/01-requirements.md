@@ -33,7 +33,7 @@ v0.1 device observations are in the changelog; they do not validate the current 
 | AC-8 | Revisit cached pages and open saved reading material offline. | Partial: cache fallback and saved HTML exist; fixture opens a saved document. Assets are not bundled; network-disabled device check pending. |
 | AC-9 | Bookmark pages and choose reading view, text size, page width and theme. | Desktop verified for listed interactions; extraction is heuristic. Device appearance pending. |
 | AC-10 | Use taps, long press, swipes and page buttons comfortably. | Driver and thresholds implemented; current hardware touch/gesture validation pending. |
-| AC-11 | Recover from page errors and return safely to the Kindle library. | Panic guards/error pages implemented; seven launcher checks pass. Hardware restore/forced-kill validation pending. |
+| AC-11 | Recover from page errors and return safely to the Kindle library. | Panic guards/error pages implemented; ten launcher checks pass. Hardware restore/forced-kill validation pending. |
 | AC-12 | See prompt feedback and acceptable screen update latency. | Device measurements pending; targets below. |
 | AC-13 | Stay inside device memory budgets. | Limits configured; peak process RSS on device pending. |
 | AC-14 | Enter an address or page-field text without the stock Kindle UI. | Custom keyboard works in desktop fixtures. Device validation pending; stock keyboard access is optional research. |
@@ -98,7 +98,7 @@ methods. A configured limit is distinct from a measured whole-process resource b
 | NFR-6 | JS heap | 48 MiB per live page configured; not a total process cap |
 | NFR-7 | Disk cache | 200 MiB configured, oldest entries evicted; device durability pending |
 | NFR-8 | Runaway script | interrupt budget of 3 s per script/timer pass; dedicated durability check pending; synchronous I/O can exceed that duration |
-| NFR-9 | Restore Kindle UI on exit/crash | seven harness checks; hardware pending |
+| NFR-9 | Restore Kindle UI on exit/crash | ten harness checks; hardware pending |
 | NFR-10 | Privacy | no telemetry; network requests come from navigation/pages; privacy review remains separate from this milestone |
 | NFR-11 | Routine e-ink refresh | partial text-quality refreshes; periodic full clear every eight text updates; hardware pending |
 | NFR-12 | Saved/cached material offline | HTML/cache implemented; full asset retention and network-disabled verification pending |

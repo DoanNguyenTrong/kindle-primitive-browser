@@ -13,7 +13,7 @@ run it, and what result counts as a pass.
 | L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing; a gallery of every page and sheet as screenshots | Computer, against local fixtures | `scripts/desktop-regression.sh` | 67 of 67 scenarios pass; screenshots in `artifacts/desktop/` |
 | Test pipeline | All of the above in one run, with the evidence kept in the repository | Computer (and the Kindle build, when cargo-zigbuild is installed) | `scripts/test-all.sh` | `artifacts/REPORT.md` shows every step as PASS |
 | L3 Live-site smoke | Real sites still load (Hacker News, Wikipedia) | Computer, needs internet | `scripts/desktop-regression.sh --network` | Both pass; a failure here is reported but may be the site, not the browser |
-| L4 Launcher | Normal run, killed launcher, and stale-marker recovery | Computer, with stub commands | `scripts/launcher-stub-test.sh` | 7 checks pass |
+| L4 Launcher | Normal run, killed launcher, and stale-marker recovery | Computer, with stub commands | `scripts/launcher-stub-test.sh` | 10 checks pass |
 | L5 Device validation | The product on the Kindle: touch, display, performance, memory, durability | Kindle Oasis 3 | Checklist in §3.5 | All must-pass items pass; evidence attached |
 | L6 Build and install | The device binary builds, is ARMv7, and matches the launcher | Computer | `cargo build --release --workspace`, `cargo zigbuild ... armv7-unknown-linux-musleabihf`, `sh deploy/install.sh` | Build succeeds; `file` reports ARM; install reports the expected size and start page |
 
@@ -149,15 +149,17 @@ device checklist in §3.5 still covers how the screen looks on the panel.
 
 ## 3.3 Launcher tests
 
-`scripts/launcher-stub-test.sh` replaces the Kindle's `start`, `stop` and the browser with
-stubs. It checks that:
+`scripts/launcher-stub-test.sh` stubs `start`, `stop`, `lipc-set-prop`, and the browser.
+Its ten checks cover:
 
-1. a normal run stops the UI, then starts it again, and removes the marker;
-2. a launcher killed during a run is recovered by the watchdog (the UI is restarted and the
-   marker removed);
-3. a marker left by an earlier run restores the UI before the UI is stopped again.
+1. Default mode hides/restores the status bar, opens the library, and removes its marker.
+2. A killed launcher is recovered by the watchdog, with the same UI/library restoration.
+3. A stale `keep` marker is restored before a new run; the run finishes within 30 seconds.
+4. The `stop-framework` flag stops/restarts the framework and clears its marker.
+5. An empty marker from an older launcher restores the framework first.
 
-These checks prove the logic. They do not prove the Kindle's behaviour; see §3.5, item D-9.
+These checks prove stubbed call order and cleanup. Recorded hardware observations are in
+[device-notes.md](device-notes.md); they complement the complete release checklist in §3.5.
 
 ## 3.4 Build and install checks
 
@@ -201,7 +203,8 @@ block a release.
 - **D-8** Long press on a link opens it in a new tab. A horizontal swipe on the address bar
   switches tabs. Evidence: log lines.
 - **D-9 (must)** Exiting from the menu returns to the Kindle library, with the UI fully
-  restored. Evidence: photo of the library; log `restoring framework`.
+  restored. Evidence: photo of the library; logs for status-bar restoration (or framework restoration
+  in fallback mode) and `opened library home`.
 - **D-10 (must)** After a forced kill of the browser (pick a method the owner is comfortable
   with), the UI is restored within 10 seconds. Evidence: photo, log.
 - **D-11** The page-turn buttons scroll one screen. Evidence: log `page` lines.
@@ -282,7 +285,7 @@ Commands were run with Homebrew Rust/zig on PATH.
 | `cargo test --workspace --exclude kb-kindle` | PASS, 13 unit tests plus doc-test targets |
 | `cargo build --release --workspace` | PASS; host `rust-objcopy` warns that debug stripping could not load `libLLVM.dylib` |
 | `scripts/desktop-regression.sh` | PASS, 67/67 local scenarios |
-| `scripts/launcher-stub-test.sh` | PASS, seven checks; intentional killed-launcher messages expected |
+| `scripts/launcher-stub-test.sh` | PASS, ten checks; intentional killed-launcher messages expected |
 | ARMv7 `cargo zigbuild` from §3.4 | PASS; vendored QuickJS emits four unused-variable warnings |
 | `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` | ELF 32-bit ARM EABI5, statically linked, stripped |
 | Visual review | Desktop frames: pinned Menu/Tabs headers, close-last-tab Home state; Day/Night display and scrolled bodies reviewed |

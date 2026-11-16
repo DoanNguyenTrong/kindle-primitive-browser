@@ -7,6 +7,7 @@
 | [03-test-and-validation.md](03-test-and-validation.md) | Test levels, the desktop regression suite, the launcher test, the device checklist, metrics and pass criteria |
 | [04-roadmap.md](04-roadmap.md) | Product goal, current milestone, acceptance evidence, and the next implementation priorities |
 | [05-ui-ux.md](05-ui-ux.md) | Kindle layout, touch targets, e-ink behavior, and UI review rules |
+| [device-notes.md](device-notes.md) | Recorded device observations about orientation, touch, launcher behavior, and rejected experiments |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and known issues |
 
 Start with the [roadmap](04-roadmap.md) for the current goal and next work. Requirements

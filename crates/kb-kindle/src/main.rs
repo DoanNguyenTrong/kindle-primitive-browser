@@ -83,20 +83,41 @@ fn turn_from_fbink(state: &str) -> Option<u32> {
     }
 }
 
-/// Ask FBInk which way the screen is drawn now.
-fn display_turn() -> Option<u32> {
+/// The turn the framework shows: its accelerometer property (`U` upright, `D` upside down, `R` and `L`
+/// landscape, which is not supported and gives no turn). This is the orientation the reader sees.
+fn turn_from_framework(value: &str) -> Option<u32> {
+    match value.trim() {
+        "U" => Some(0),
+        "D" => Some(2),
+        _ => None,
+    }
+}
+
+fn framework_turn() -> Option<u32> {
+    let out = Command::new("lipc-get-prop").args(["com.lab126.winmgr", "accelerometer"]).output().ok()?;
+    turn_from_framework(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// FBInk's framebuffer rotation, kept beside the framework's value in the log.
+fn framebuffer_turn() -> Option<u32> {
     let out = Command::new(FBINK).arg("-e").output().ok()?;
     turn_from_fbink(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// The turn now: the framework's, else the framebuffer's. Both are returned for the log.
+fn display_turn() -> (Option<u32>, Option<u32>) {
+    (framework_turn(), framebuffer_turn())
+}
+
 /// Follow the screen's turn: once a second, and each change sets the turn that touch and the page
-/// buttons use.
+/// buttons use. The log records both sources, so a disagreement with the text on screen shows.
 fn display_turn_watch() {
     loop {
         thread::sleep(Duration::from_secs(1));
-        let Some(turn) = display_turn() else { continue };
+        let (framework, framebuffer) = display_turn();
+        let Some(turn) = framework.or(framebuffer) else { continue };
         if PANEL_ROTA.swap(turn, Ordering::Relaxed) != turn {
-            log(&format!("display turned: rota {turn}"));
+            log(&format!("display turned: rota {turn} (framework {framework:?}, framebuffer {framebuffer:?})"));
         }
     }
 }
@@ -424,9 +445,10 @@ fn main() {
     // While a page loads, the progress strip is drawn and any tap cancels the wait,
     // so the input is handled right away instead of after the page finishes.
     let pump_state = shared.clone();
-    let turn = display_turn().unwrap_or(0);
+    let (framework, framebuffer) = display_turn();
+    let turn = framework.or(framebuffer).unwrap_or(0);
     PANEL_ROTA.store(turn, Ordering::Relaxed);
-    log(&format!("turn at start: rota {turn}"));
+    log(&format!("turn at start: rota {turn} (framework {framework:?}, framebuffer {framebuffer:?})"));
     thread::spawn(display_turn_watch);
     let mut b = Browser::new(NATIVE_W, NATIVE_H);
     b.set_pump(Box::new(move |fraction, label| {
@@ -516,7 +538,8 @@ fn main() {
         }
         if b.exit_requested() {
             log("exit requested");
-            let _ = Command::new(FBINK).args(["-c", "-f"]).status();
+            // A plain clear, no flash: the framework draws the library right after, which saves the flash time.
+            let _ = Command::new(FBINK).args(["-c"]).status();
             break;
         }
     }
@@ -540,6 +563,14 @@ mod tests {
     fn page_buttons_trade_places_only_upside_down() {
         assert!(!page_buttons_swapped(0));
         assert!(page_buttons_swapped(2));
+    }
+
+    #[test]
+    fn the_framework_turn_is_upright_or_upside_down_and_landscape_gives_none() {
+        assert_eq!(turn_from_framework("U\n"), Some(0));
+        assert_eq!(turn_from_framework("D"), Some(2));
+        assert_eq!(turn_from_framework("R"), None);
+        assert_eq!(turn_from_framework("L"), None);
     }
 
     #[test]

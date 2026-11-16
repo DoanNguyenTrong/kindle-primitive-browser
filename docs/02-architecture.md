@@ -143,8 +143,7 @@ Root: `$KB_DATA` on the computer, `/mnt/us/browser/data` on the device.
 | `defaults_v2` | Marker: default bookmarks already added | once |
 
 Device-only files in `/mnt/us/browser/`: `kb-kindle` (binary), `start.txt` (start page),
-`log-browser.txt` (kept near 200 KB), `frame.png` (last frame), `framework-stopped` (marker
-while the Kindle UI is stopped), `kb.pid` (browser process while it runs).
+`log-browser.txt` (kept near 200 KB), `frame.png` (last frame), `framework-stopped` (UI mode marker, containing `keep` or `stop`), `kb.pid` (browser process while it runs).
 
 ## 2.8 Device lifecycle
 
@@ -152,18 +151,26 @@ Entry point: `documents/Primitive Browser.sh`, installed from `deploy/Browser.sh
 old name, `KB Browser.sh`). The logo is `assets/primitive-icon.png`, built into the binary for the
 home screen and copied to `browser/icon.png` for the launcher.
 
-1. A marker file from an earlier run means the Kindle UI may still be stopped: it is
-   restored first.
-2. The UI framework is stopped (`stop lab126_gui` under upstart; `/etc/init.d/framework stop`
-   under SysV).
-3. A **watchdog** process is started. It waits until the launcher exits, then stops the
-   browser process if it is still running, restarts the UI framework, and clears the marker.
-4. The browser runs under the launcher, which restarts it after a crash (up to three times).
-5. On exit, the launcher restores the framework through its exit trap.
+1. Recover an earlier UI change from `framework-stopped`: `keep` restores the status bar;
+   `stop`, an empty marker, or a legacy marker restores the framework.
+2. Default mode keeps both the framework and window manager running and hides the status bar
+   through `com.lab126.pillow`. This preserves framework orientation updates. A `stop-framework`
+   flag in the browser folder selects the older stop/restart mode.
+3. A watchdog outlives the launcher. If it disappears, the watchdog stops a remaining browser
+   process, restores the marked UI mode, and opens the library.
+4. The launcher retains its crash restart limit of three and restores UI through its exit trap.
+5. On upstart systems, library activation is attempted immediately and retried up to 40 times
+   with a 250 ms device pause between attempts. The shell falls back to a one-second sleep when
+   `usleep` is unavailable.
 
-Killing the launcher leaves the watchdog to restore the framework. Whether the Kindle
-library closes the whole process group, which would also stop the watchdog, is not yet
-confirmed on the device (see the validation document).
+Orientation polling prefers `com.lab126.winmgr accelerometer` (`U`/`D`) and retains FBInk as
+an optional fallback; both values are logged. The recorded device build does not export
+`currentRota` from `fbink -e`, so the framework is the usable source there. The browser clears
+without requesting an extra exit flash before the framework draws the library.
+
+[Device notes](device-notes.md) record the observed startup/rotation behavior, native touch
+coordinates, status-bar handling, and library return timings. Whole-process-group termination
+and comprehensive release validation still need separate checks.
 
 ## 2.9 Error handling
 
