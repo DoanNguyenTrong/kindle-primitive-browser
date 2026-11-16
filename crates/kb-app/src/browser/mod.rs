@@ -20,6 +20,7 @@ use crate::settings::*;
 use crate::storage::*;
 
 mod actions;
+mod diagnostics;
 mod driver;
 mod frame;
 mod input;
@@ -115,6 +116,12 @@ pub struct Browser {
     pending_nav: Option<String>,
     /// How many redirects are in progress, so a redirect loop stops after a few hops.
     redirect_depth: u8,
+    /// Results of the last diagnostics run, or `None` before the first run.
+    diagnostics: Option<Vec<crate::ui::Report>>,
+    /// The last DNS change made from the diagnostics page, shown above the checks.
+    fix_report: Option<crate::ui::Report>,
+    /// The keyboard is entering the SSH password (kept in memory only, never in a URL or the log).
+    password_entry: bool,
 }
 
 impl Browser {
@@ -176,6 +183,9 @@ impl Browser {
             device_status: DeviceStatus::unavailable(),
             pending_nav: None,
             redirect_depth: 0,
+            diagnostics: None,
+            fix_report: None,
+            password_entry: false,
         }
     }
 

@@ -14,6 +14,8 @@ pub(super) fn load_reason(err: &str) -> String {
         )
     } else if err.contains("request failed") {
         "No connection to the site. Check the Wi-Fi and try again.".into()
+    } else if err.contains("resolves to this device") {
+        "The device sends this site to its own address (a hosts-file or DNS override), so it cannot be reached. Removing that override restores access.".into()
     } else if err.contains("read failed") {
         "The page is too large to open on this device.".into()
     } else {

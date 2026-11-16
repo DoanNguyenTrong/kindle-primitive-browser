@@ -7,6 +7,22 @@ workspace version is `0.1.18`.
 
 ## [Unreleased]
 
+### Added
+- Diagnostics page (`kbp://diagnostics`, Diagnostics button in the menu). Run checks runs eight read-only checks through the shell engine (shell, system, storage, network interfaces, DNS, hosts file, browser files, processes) and shows each result. Results are also logged as `[diag]` lines. Set public DNS points the device at 1.1.1.1 and 8.8.8.8 (saving the original settings to `/mnt/us` first), and Restore DNS puts them back. Both run fixed commands through the shell engine and log `[fix]` lines. Start SSH runs an SSH server on port 2222 with a new random root password, shown on the page. Stop SSH stops the server and its sessions. Set SSH password types the root password on the keyboard; it is checked, set with chpasswd, and never written to a URL or the log.
+- `kb-term` crate: a shell command engine. It runs a shell on a pseudo-terminal, returns each command's output, exit status, and whether it timed out, and stops a command that runs too long with Ctrl-C. It is the base for the troubleshooting tools. Ported from KOReader's terminal plugin (AGPL-3.0); see the header of `crates/kb-term/src/lib.rs`.
+
+### Changed
+- Licence changed from MIT to GNU AGPL-3.0 (`LICENSE`, `Cargo.toml`, README). Releases up to 0.1.18 stay under MIT.
+- Each request looks up the site's address once per minute at most. The loopback check and the HTTP client
+  share that lookup, and a page's images reuse it, instead of resolving the same host again for every request.
+  A failed request drops its remembered address.
+
+### Fixed
+- After a Wi-Fi drop, pages whose site publishes IPv6 addresses kept failing with "Address family not
+  supported by protocol (os error 97)", even after reconnecting, so Reload could not recover. The HTTP
+  client now uses IPv6 only where the system can open IPv6 sockets. The Kindle cannot, so there it connects
+  over IPv4 only.
+
 ## [0.1.18] - 2026-11-16
 
 ### Changed

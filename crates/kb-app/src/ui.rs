@@ -52,6 +52,7 @@ pub fn icon(name: &str, size: u32) -> String {
         "chev-down" => r#"<path d="M6 9 L12 15 L18 9"/>"#,
         "up" => r#"<path d="M12 19 V6 M6 11 L12 5 L18 11"/>"#,
         "down" => r#"<path d="M12 5 V18 M6 13 L12 19 L18 13"/>"#,
+        "pulse" => r#"<path d="M2 12 H7 L9.5 5 L14 19 L16.5 12 H22"/>"#,
         _ => "",
     };
     format!(
@@ -219,6 +220,11 @@ pub fn sheet_header(title: &str, controls: &str) -> String {
         r#"<div class="sheet-title"><span>{}</span><div class="sheet-controls">{controls}</div></div>"#,
         esc(title)
     ), "")
+}
+
+/// The Diagnostics control in the menu's title strip, beside Exit.
+pub fn diagnostics_button() -> String {
+    r#"<a class="btn" href="kbp://diagnostics">Diagnostics</a>"#.to_string()
 }
 
 /// The Exit control shown in the menu's title strip.
@@ -664,6 +670,55 @@ pub fn error(title: &str, reason: &str, detail: &str) -> String {
         d = esc(detail),
     );
     document(title, &body, "")
+}
+
+/// One check on the diagnostics page: what it is, the command run, and what it printed.
+pub struct Report {
+    pub title: String,
+    pub command: String,
+    pub output: String,
+}
+
+const DIAG_CSS: &str = ".actions{margin:0 0 30px}.diag{margin:0 0 26px}.diag-title{font-size:26px;margin:0}\
+.diag-cmd{font-size:20px;color:#666;margin:2px 0 6px}\
+.diag-out{font-size:20px;margin:0;padding:6px 0 6px 14px;border-left:3px solid #000;white-space:pre-wrap}.ssh-connect{font-size:38px;font-weight:bold;margin:12px 0 10px;padding:16px;border:3px solid #000;border-radius:14px}";
+
+/// The SSH result, shown as one card: the connect command in large type, then the server's status.
+fn ssh_card(r: &Report) -> String {
+    let connect = r.output.lines().find(|l| l.starts_with("ssh -p ")).unwrap_or("");
+    let status: Vec<&str> = r.output.lines().filter(|l| !l.starts_with("ssh -p ") && !l.trim().is_empty()).collect();
+    format!(
+        r#"<div class="diag"><h2 class="diag-title">SSH server</h2><div class="ssh-connect">{c}</div><div class="diag-cmd">Login: root, with the SSH password.</div><pre class="diag-out">{s}</pre></div>"#,
+        c = esc(connect),
+        s = esc(&status.join("\n")),
+    )
+}
+
+/// The diagnostics page: the actions, the last DNS change (if any), then one section per check. Before the
+/// first run there are no checks yet, and the page says what the page does.
+pub fn diagnostics(report: Option<&[Report]>, fix: Option<&Report>, ssh_on: bool) -> String {
+    let run_label = if report.is_some() { "Run again" } else { "Run checks" };
+    let intro = if report.is_some() {
+        String::new()
+    } else {
+        r#"<div class="empty">Runs read-only checks on this device: the shell, system, storage, Wi-Fi, DNS, the hosts file, browser files and processes. Set public DNS points this device at 1.1.1.1 and 8.8.8.8 (the original settings are saved first); Restore DNS puts them back. Start SSH runs an SSH server on port 2222. Set SSH password changes the root password; type it on the keyboard (starts as 123456), 6 to 64 letters, digits, or - _ . @ # % + = !.</div>"#.to_string()
+    };
+    let ssh_label = if ssh_on { "Stop SSH" } else { "Start SSH" };
+    let actions = format!(
+        r#"<div class="actions"><a class="btn on" href="kb:diag">{run_label}</a><a class="btn" href="kb:back">Back</a></div><div class="diag-cmd">DNS</div><div class="actions"><a class="btn" href="kb:dns:public">Public DNS</a><a class="btn" href="kb:dns:restore">Restore DNS</a></div><div class="diag-cmd">SSH</div><div class="actions"><a class="btn" href="kb:ssh:toggle">{ssh_label}</a><a class="btn" href="kb:ssh:password">Set SSH password</a></div>"#
+    );
+    let section = |r: &Report| {
+        format!(
+            r#"<div class="diag"><h2 class="diag-title">{t}</h2><div class="diag-cmd">{c}</div><pre class="diag-out">{o}</pre></div>"#,
+            t = esc(&r.title),
+            c = esc(&r.command),
+            o = esc(&r.output),
+        )
+    };
+    let fix_section = fix.map(|r| if r.title == "Start SSH" { ssh_card(r) } else { section(r) }).unwrap_or_default();
+    let checks: String = report.unwrap_or(&[]).iter().map(section).collect();
+    let body = format!(r#"<div class="page"><h1>Diagnostics</h1>{intro}{actions}{fix_section}{checks}</div>"#);
+    document("Diagnostics", &body, DIAG_CSS)
 }
 
 /// Short notice shown above the bottom toolbar. Placed by the caller.

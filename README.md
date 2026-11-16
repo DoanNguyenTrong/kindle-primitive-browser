@@ -10,7 +10,7 @@ Written in Rust. It runs on the Kindle itself, and the screen is grayscale e-ink
 [![CI](https://img.shields.io/github/actions/workflow/status/DoanNguyenTrong/kindle-primitive-browser/ci.yml?branch=main&label=CI)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/DoanNguyenTrong/kindle-primitive-browser?label=release)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases)
 [![Tag](https://img.shields.io/github/v/tag/DoanNguyenTrong/kindle-primitive-browser?label=tag)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/tags)
-[![Licence: MIT](https://img.shields.io/github/license/DoanNguyenTrong/kindle-primitive-browser)](LICENSE)
+[![Licence: AGPL-3.0](https://img.shields.io/github/license/DoanNguyenTrong/kindle-primitive-browser)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/DoanNguyenTrong/kindle-primitive-browser?style=social)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/stargazers)
 
 [**Download**](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases/latest) ·
@@ -300,7 +300,9 @@ hardware test on the Oasis 3, and a note of the result in the pull request.
 
 ## Licence
 
-Released under the [MIT licence](LICENSE). Copyright (c) 2026 Doan Nguyen.
+Copyright (C) 2026 Doan Nguyen. Released under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Earlier releases, up to 0.1.18, were published under the MIT licence.
+
+The shell engine in `crates/kb-term` is ported from KOReader's terminal plugin (`plugins/terminal.koplugin`, copyright the KOReader contributors, AGPL-3.0). The port is written in Rust; see the header of `crates/kb-term/src/lib.rs`.
 
 ## Security
 

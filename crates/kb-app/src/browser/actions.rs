@@ -1,6 +1,7 @@
 //! Browser actions named by `kb:` links: the menu, the Display settings, and the toolbar.
 
 use super::*;
+use super::diagnostics::Change;
 use crate::LEVEL_MAX;
 
 pub(super) fn stays_open(href: &str) -> bool {
@@ -131,6 +132,11 @@ impl Browser {
             "kb:save" => self.save_offline(),
             "kb:marks" => self.open("kbp://bookmarks"),
             "kb:saved" => self.open("kbp://saved"),
+            "kb:diag" => self.run_diagnostics(),
+            "kb:dns:public" => self.run_change(Change::PublicDns),
+            "kb:dns:restore" => self.run_change(Change::RestoreDns),
+            "kb:ssh:toggle" => self.toggle_ssh(),
+            "kb:ssh:password" => self.begin_ssh_password(),
             "kb:display" => self.show_sheet(Sheet::Display),
             "kb:quickclose" => self.close_quick(),
             "kb:wifi" => {

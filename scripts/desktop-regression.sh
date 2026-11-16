@@ -713,6 +713,50 @@ tapsel a[href=\"kbp://bookmarks\"]
 shot 21-menu-opens-bookmarks
 quit" "[shot] 01-home" "[shot] 21-menu-opens-bookmarks" "[shot] 17-error-page"
 
+# Diagnostics: the menu opens the page, and Run checks runs each check through the shell engine.
+run diagnostics_runs_checks "open kbp://home
+action menu
+tapsel a[href=\"kbp://diagnostics\"]
+count .diag
+tapsel a[href=\"kb:diag\"]
+count .diag
+shot 22-diagnostics
+quit" "[count] .diag: 0" "[count] .diag: 9" "[diag] Shell engine: status Some(0), timed out false" "[diag] Browser processes: status" "[diag]   ok" "[shot] 22-diagnostics"
+
+# DNS change from the diagnostics page: off the Kindle (no /mnt/us) it must report that nothing changed.
+run dns_change_refuses_off_kindle "open kbp://home
+action menu
+tapsel a[href=\"kbp://diagnostics\"]
+tapsel a[href=\"kb:dns:public\"]
+count .diag
+shot 25-dns-change
+quit" "[fix] Set public DNS: status Some(0), timed out false" "[fix]   not a Kindle: nothing changed" "[count] .diag: 1" "[shot] 25-dns-change"
+
+# SSH start from the diagnostics page: off the Kindle it must report that nothing changed.
+run ssh_start_refuses_off_kindle "open kbp://home
+action menu
+tapsel a[href=\"kbp://diagnostics\"]
+tapsel a[href=\"kb:ssh:toggle\"]
+shot 27-ssh-start
+quit" "[fix] Start SSH: status Some(0), timed out false" "[fix]   not a Kindle: nothing changed" "[fix]   ssh -p 2222 root@no-address" "[shot] 27-ssh-start" "[shot] 27-ssh-start"
+
+# SSH password from the keyboard: off the Kindle it must report that nothing changed, and the typed
+# password must not show up in the log.
+run ssh_password_refuses_off_kindle "open kbp://home
+action menu
+tapsel a[href=\"kbp://diagnostics\"]
+tapsel a[href=\"kb:ssh:password\"]
+tapsel a[href=\"kb:c:112\"]
+tapsel a[href=\"kb:c:97\"]
+tapsel a[href=\"kb:c:115\"]
+tapsel a[href=\"kb:c:115\"]
+tapsel a[href=\"kb:c:119\"]
+tapsel a[href=\"kb:c:111\"]
+tapsel a[href=\"kb:c:114\"]
+tapsel a[href=\"kb:c:100\"]
+tapsel a[href=\"kb:go\"]
+quit" "[fix] Set SSH password: status Some(0), timed out false" "[fix]   not a Kindle: nothing changed"
+
 # --- live sites (opt-in) ----------------------------------------------------------
 if [ $NETWORK -eq 1 ]; then
     run hacker_news "open https://news.ycombinator.com/

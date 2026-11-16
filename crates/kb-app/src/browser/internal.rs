@@ -1,4 +1,4 @@
-//! Internal pages (`kbp://home`, `kbp://bookmarks`, `kbp://saved`) built from browser data.
+//! Internal pages (`kbp://home`, `kbp://bookmarks`, `kbp://saved`, `kbp://diagnostics`) built from browser data.
 
 use super::*;
 use crate::ui;
@@ -16,6 +16,7 @@ impl Browser {
                 self.settings.home_recent_open,
             ),
             "bookmarks" => ui::bookmarks(&self.bookmarks),
+            "diagnostics" => ui::diagnostics(self.diagnostics.as_deref(), self.fix_report.as_ref(), super::diagnostics::ssh_running()),
             "saved" => {
                 let items: Vec<ui::ListItem> = read_pairs(&data_file("saved.tsv"))
                     .iter()

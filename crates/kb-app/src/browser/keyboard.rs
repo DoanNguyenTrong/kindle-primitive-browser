@@ -107,6 +107,7 @@ impl Browser {
     }
 
     pub(super) fn enter_keyboard(&mut self) {
+        self.password_entry = false;
         self.keyboard = true;
         self.sheet = None;
         self.input_target = None;
@@ -195,12 +196,20 @@ impl Browser {
                 "kb:cancel" => {
                     self.keyboard = false;
                     self.input_target = None;
+                    self.password_entry = false;
+                    self.typed.clear();
                     self.touch(0, self.height, Wave::Text);
                     return;
                 }
                 "kb:go" => {
                     let text: String = self.typed.iter().collect();
                     self.keyboard = false;
+                    if self.password_entry {
+                        self.password_entry = false;
+                        self.typed.clear();
+                        self.set_ssh_password(&text);
+                        return;
+                    }
                     if let Some(key) = self.input_target.take() {
                         // Editing a page field: write the value back, submit its form if it has one.
                         let form = self
@@ -241,6 +250,10 @@ impl Browser {
     /// `SUGGESTION_LIMIT`; the list scrolls, so a long history stays reachable.
     pub(super) fn refresh_suggestions(&mut self) {
         const SUGGESTION_LIMIT: usize = 60;
+        if self.password_entry {
+            self.suggestions.clear();
+            return;
+        }
         // A selected address is not a query yet: list the bookmarks and recent pages instead.
         let q: String = if self.select_all {
             String::new()
@@ -265,10 +278,17 @@ impl Browser {
 
     /// The address bar layer, shown above the suggestions while the keyboard is open.
     pub(super) fn ensure_field(&mut self) -> &mut Cached {
-        let typed: String = self.typed.iter().collect();
-        let key = format!("{typed}|{}|{}", self.caret, self.select_all);
+        // A password is shown as stars, and its text never becomes part of the cache key.
+        let (shown, key): (Vec<char>, String) = if self.password_entry {
+            let stars = vec!['*'; self.typed.len()];
+            let key = format!("pw:{}|{}|{}", self.typed.len(), self.caret, self.select_all);
+            (stars, key)
+        } else {
+            let typed: String = self.typed.iter().collect();
+            (self.typed.clone(), format!("{typed}|{}|{}", self.caret, self.select_all))
+        };
         if self.field.as_ref().map_or(true, |c| c.key != key) {
-            let html = ui::field_bar(&self.typed, self.caret, self.select_all);
+            let html = ui::field_bar(&shown, self.caret, self.select_all);
             let mut c = self.render_layer(&html, "kb://keyboard/", self.width, TOP_H);
             c.key = key;
             self.field = Some(c);

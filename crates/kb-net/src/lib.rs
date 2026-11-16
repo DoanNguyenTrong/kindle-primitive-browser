@@ -3,15 +3,23 @@
 //! (stylesheets, images, fonts) synchronously.
 
 use std::{
+    collections::HashMap,
+    net::{SocketAddr, ToSocketAddrs},
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, Mutex, OnceLock,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
-use ureq::ResponseExt;
+use ureq::{
+    unversioned::{
+        resolver::{DefaultResolver, ResolvedSocketAddrs, Resolver},
+        transport::{DefaultConnector, NextTimeout},
+    },
+    ResponseExt,
+};
 
 pub mod store;
 
@@ -27,17 +35,31 @@ pub struct Fetched {
     pub body: Vec<u8>,
 }
 
+/// Whether this system can open IPv6 sockets. (The Kindle cannot.)
+fn ipv6_available() -> bool {
+    std::net::UdpSocket::bind("[::]:0").is_ok()
+}
+
 fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
     AGENT.get_or_init(|| {
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        // IPv6 only where the system can open IPv6 sockets. The Kindle cannot ("Address family not supported
+        // by protocol", os error 97), and the HTTP client does not fall back to IPv4 by itself, so there
+        // every connection to a site that publishes IPv6 addresses failed. There the agent is IPv4 only.
+        let family = if ipv6_available() {
+            ureq::config::IpFamily::Any
+        } else {
+            ureq::config::IpFamily::Ipv4Only
+        };
+        let config = ureq::Agent::config_builder()
+            .ip_family(family)
             .timeout_connect(Some(Duration::from_secs(15)))
             .timeout_global(Some(Duration::from_secs(30)))
             .max_redirects(8)
             .user_agent(USER_AGENT)
             .http_status_as_error(false)
-            .build()
-            .into();
+            .build();
+        let agent = ureq::Agent::with_parts(config, DefaultConnector::default(), CachedResolver);
         if let Ok(text) = std::fs::read_to_string(store::cookies_path()) {
             let mut jar = agent.cookie_jar_lock();
             let _ = jar.load_json(text.as_bytes());
@@ -117,17 +139,168 @@ pub fn load(url: &str, max_bytes: u64, policy: Policy) -> Result<Fetched, String
     }
 }
 
+/// The host name and port of an http(s) address.
+fn host_and_port(url: &str) -> Option<(String, u16)> {
+    let (default_port, rest) = match url.split_once("://") {
+        Some(("https", rest)) => (443, rest),
+        Some(("http", rest)) => (80, rest),
+        _ => return None,
+    };
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let (host, port) = match authority.rsplit_once(':') {
+        Some((h, p)) if p.parse::<u16>().is_ok() => (h, p.parse::<u16>().unwrap_or(default_port)),
+        _ => (authority, default_port),
+    };
+    (!host.is_empty()).then(|| (host.to_string(), port))
+}
+
+/// How long a host's addresses are reused. A page and each of its images are fetched from the same hosts,
+/// and the Kindle's lookups are slow, so one lookup serves them all. The entry is short-lived so that a
+/// change of network or DNS server is picked up within a minute.
+const DNS_TTL: Duration = Duration::from_secs(60);
+
+/// Most addresses kept per host (the same limit the HTTP client applies).
+const MAX_ADDRS: usize = 16;
+
+type DnsCache = Mutex<HashMap<(String, u16), (Instant, Vec<SocketAddr>)>>;
+
+fn dns_cache() -> &'static DnsCache {
+    static CACHE: OnceLock<DnsCache> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The addresses remembered for `host:port`, if they are still fresh.
+fn cached_addrs(host: &str, port: u16) -> Option<Vec<SocketAddr>> {
+    let cache = dns_cache().lock().ok()?;
+    let (at, addrs) = cache.get(&(host.to_string(), port))?;
+    (at.elapsed() < DNS_TTL).then(|| addrs.clone())
+}
+
+/// Forget what is remembered for `host:port`, so the next use looks it up again.
+fn forget_addrs(host: &str, port: u16) {
+    if let Ok(mut cache) = dns_cache().lock() {
+        cache.remove(&(host.to_string(), port));
+    }
+}
+
+/// Forget the addresses of the host in `url`. Called when a request to it fails.
+fn forget_host(url: &str) {
+    if let Some((host, port)) = host_and_port(url) {
+        forget_addrs(&host, port);
+    }
+}
+
+/// The addresses of `host:port`: the remembered ones while fresh, otherwise a new lookup, which is then
+/// remembered.
+fn resolve_host(host: &str, port: u16) -> std::io::Result<Vec<SocketAddr>> {
+    if let Some(addrs) = cached_addrs(host, port) {
+        return Ok(addrs);
+    }
+    let addrs: Vec<SocketAddr> = (host, port).to_socket_addrs()?.collect();
+    if !addrs.is_empty() {
+        if let Ok(mut cache) = dns_cache().lock() {
+            cache.insert((host.to_string(), port), (Instant::now(), addrs.clone()));
+        }
+    }
+    Ok(addrs)
+}
+
+/// The name lookup used by the HTTP client. A host looked up recently (by the loopback check in
+/// [`redirected_to_device`]) is answered from the cache, filtered to the address families this device
+/// can use. Any other host takes the client's own lookup, with its timeout; that result is not kept here,
+/// so the cache holds only the complete list from the check.
+#[derive(Debug)]
+struct CachedResolver;
+
+impl Resolver for CachedResolver {
+    fn resolve(
+        &self,
+        uri: &ureq::http::Uri,
+        config: &ureq::config::Config,
+        timeout: NextTimeout,
+    ) -> Result<ResolvedSocketAddrs, ureq::Error> {
+        if let Some((host, port)) = uri_host_and_port(uri) {
+            if let Some(addrs) = cached_addrs(&host, port) {
+                let mut result = self.empty();
+                for addr in config.ip_family().keep_wanted(addrs.into_iter()).take(MAX_ADDRS) {
+                    result.push(addr);
+                }
+                if !result.is_empty() {
+                    return Ok(result);
+                }
+            }
+        }
+        DefaultResolver::default().resolve(uri, config, timeout)
+    }
+}
+
+/// The host name and port of a request URI, with the scheme's default port when none is given.
+fn uri_host_and_port(uri: &ureq::http::Uri) -> Option<(String, u16)> {
+    let default_port = match uri.scheme_str()? {
+        "https" => 443,
+        "http" => 80,
+        _ => return None,
+    };
+    Some((uri.host()?.to_string(), uri.port_u16().unwrap_or(default_port)))
+}
+
+/// A site whose name resolves only to this device's own loopback address (127.0.0.0/8 or ::1) is being
+/// sent to the device by a hosts-file or DNS override: nothing can be reached that way. Returns the message
+/// to show. Literal addresses and `localhost` are not affected. The lookup it makes is remembered for the
+/// request that follows.
+fn redirected_to_device(url: &str) -> Option<String> {
+    let (host, port) = host_and_port(url)?;
+    if host.eq_ignore_ascii_case("localhost") || host.parse::<std::net::IpAddr>().is_ok() {
+        return None;
+    }
+    let addrs = resolve_host(&host, port).ok()?;
+    if addrs.is_empty() || addrs.iter().any(|a| !a.ip().is_loopback()) {
+        return None;
+    }
+    Some(format!(
+        "{host} resolves to this device itself ({}): a hosts-file or DNS override on the device redirects it",
+        addrs[0].ip()
+    ))
+}
+
+/// When a page cannot be fetched, log where its host resolves and whether each address accepts a
+/// connection. The device log then shows a network-side refusal apart from a DNS problem.
+fn diagnose_connect(url: &str) {
+    use std::net::TcpStream;
+    let Some((host, port)) = host_and_port(url) else { return };
+    match (host.as_str(), port).to_socket_addrs() {
+        Ok(addrs) => {
+            let addrs: Vec<std::net::SocketAddr> = addrs.collect();
+            eprintln!("[net-diag] {host} resolves to {addrs:?}");
+            for addr in addrs.iter().take(4) {
+                match TcpStream::connect_timeout(addr, Duration::from_secs(5)) {
+                    Ok(_) => eprintln!("[net-diag] connect {addr}: ok"),
+                    Err(e) => eprintln!("[net-diag] connect {addr}: {e}"),
+                }
+            }
+        }
+        Err(e) => eprintln!("[net-diag] {host} does not resolve: {e}"),
+    }
+}
+
 /// Fetch an http(s) URL, refusing bodies larger than `max_bytes`.
 pub fn fetch(url: &str, max_bytes: u64) -> Result<Fetched, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(format!("unsupported scheme: {url}"));
+    }
+    if let Some(message) = redirected_to_device(url) {
+        return Err(message);
     }
     let resp = agent()
         .get(url)
         .header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
         .header("Accept-Language", "en,vi;q=0.8")
         .call()
-        .map_err(|e| format!("request failed: {e}"))?;
+        .map_err(|e| {
+            forget_host(url);
+            diagnose_connect(url);
+            format!("request failed: {e}")
+        })?;
     read_response(resp, max_bytes)
 }
 
@@ -151,6 +324,9 @@ pub fn request(
 ) -> Result<Reply, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(format!("unsupported scheme: {url}"));
+    }
+    if let Some(message) = redirected_to_device(url) {
+        return Err(message);
     }
     let agent = agent();
     let text = body.unwrap_or("");
@@ -178,7 +354,10 @@ pub fn request(
             req.call()
         }
     };
-    let resp = sent.map_err(|e| format!("request failed: {e}"))?;
+    let resp = sent.map_err(|e| {
+        forget_host(url);
+        format!("request failed: {e}")
+    })?;
     let status = resp.status().as_u16();
     let url = resp.get_uri().to_string();
     let content_type = resp
@@ -204,7 +383,10 @@ pub fn post_form(url: &str, fields: &[(String, String)], max_bytes: u64) -> Resu
         .post(url)
         .header("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
         .send_form(fields.iter().map(|(k, v)| (k.as_str(), v.as_str())))
-        .map_err(|e| format!("request failed: {e}"))?;
+        .map_err(|e| {
+            forget_host(url);
+            format!("request failed: {e}")
+        })?;
     read_response(resp, max_bytes)
 }
 
@@ -469,6 +651,64 @@ mod tests {
         assert!(is_image_url("https://cdn.example.org/img.webp/200"));
         assert!(!is_image_url("https://example.org/app.js"));
         assert!(!is_image_url("https://example.org/page.html#img.png-section"));
+    }
+
+    #[test]
+    fn remembered_addresses_answer_the_client_filtered_to_its_families() {
+        let host = "dns-cache-test.example";
+        let v4 = SocketAddr::from(([127, 0, 0, 1], 8080));
+        let v6 = SocketAddr::from((std::net::Ipv6Addr::LOCALHOST, 8080));
+        assert!(cached_addrs(host, 8080).is_none());
+        dns_cache().lock().unwrap().insert((host.to_string(), 8080), (Instant::now(), vec![v4, v6]));
+
+        let uri: ureq::http::Uri = "http://dns-cache-test.example:8080/x".parse().unwrap();
+        let v4_only = ureq::config::Config::builder()
+            .ip_family(ureq::config::IpFamily::Ipv4Only)
+            .build();
+        let answer = CachedResolver.resolve(&uri, &v4_only, NextTimeout::default()).unwrap();
+        assert_eq!(&answer[..], &[v4][..]);
+
+        let any = ureq::config::Config::builder().ip_family(ureq::config::IpFamily::Any).build();
+        let answer = CachedResolver.resolve(&uri, &any, NextTimeout::default()).unwrap();
+        assert_eq!(&answer[..], &[v4, v6][..]);
+
+        forget_host("http://dns-cache-test.example:8080/x");
+        assert!(cached_addrs(host, 8080).is_none());
+    }
+
+    #[test]
+    fn agent_connects_to_remembered_addresses_without_a_lookup() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                let mut buf = [0u8; 1024];
+                let _ = stream.read(&mut buf);
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+            }
+        });
+        // `.invalid` never resolves, so the request succeeds only if the remembered address is used.
+        let host = "cache-agent-test.invalid";
+        dns_cache().lock().unwrap().insert(
+            (host.to_string(), port),
+            (Instant::now(), vec![SocketAddr::from(([127, 0, 0, 1], port))]),
+        );
+        let result = agent().get(&format!("http://{host}:{port}/")).call();
+        forget_addrs(host, port);
+        assert_eq!(result.expect("the remembered address should be used").status().as_u16(), 200);
+    }
+
+    #[test]
+    fn expired_addresses_are_not_reused() {
+        let host = "dns-expiry-test.example";
+        let stale = Instant::now() - DNS_TTL - Duration::from_secs(1);
+        dns_cache().lock().unwrap().insert(
+            (host.to_string(), 80),
+            (stale, vec![SocketAddr::from(([127, 0, 0, 1], 80))]),
+        );
+        assert!(cached_addrs(host, 80).is_none());
+        forget_addrs(host, 80);
     }
 
     #[test]

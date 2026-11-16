@@ -346,7 +346,7 @@ impl Browser {
         if self.sheet_header.as_ref().map_or(true, |c| c.key != title) {
             // Only the menu has a control in its title strip (Exit). Other sheets close by a tap on
             // the page above them.
-            let controls = if sheet == Sheet::Menu { ui::exit_button() } else { String::new() };
+            let controls = if sheet == Sheet::Menu { ui::diagnostics_button() + &ui::exit_button() } else { String::new() };
             let html = ui::sheet_header(&title, &controls);
             let mut c = self.render_layer(&html, "kb://chrome/", self.width, SHEET_TITLE_H);
             c.key = title;
