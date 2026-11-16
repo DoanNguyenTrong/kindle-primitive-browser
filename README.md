@@ -117,7 +117,23 @@ Planned in this order. Details are in the [roadmap](docs/04-roadmap.md) and [dev
 - [ ] Device profiles for other Kindle models (see [device support](docs/DEVICES.md))
 - [ ] A hardware check for each new model
 
-**Not planned for now:** ES modules, WebSockets, service workers, workers, canvas, WebGL, audio and video.
+### Why these are not planned
+
+The browser is built for reading and reference pages on an e-ink screen. These features suit web apps,
+so each one is left out for now.
+
+| Feature | Why it is not planned |
+|---|---|
+| **ES modules (`import`)** | Most modern site code is split into modules that load each other. Supporting them needs a module loader and a dependency graph, which is a large job, and reading pages rarely need it. |
+| **WebSockets** | They keep a connection open for live updates such as chat and live feeds. E-ink cannot refresh continuously, and reading pages do not need live data. |
+| **Service workers** | They run in the background to cache apps and work offline. The browser keeps no background JavaScript, and its disk cache already covers offline reading. |
+| **Workers** | They run JavaScript on a second thread. Each page has a 48 MiB JavaScript heap on this device, so a second context would compete with the page for scarce memory, and reading pages rarely need it. |
+| **Canvas** | It draws with code, mostly for charts, maps and games. Drawing that way is slow on this CPU, and the e-ink screen refreshes too slowly for animated results. |
+| **WebGL** | It draws 3D graphics on the graphics processor. The Kindle has no such processor for a browser to use. |
+| **Audio** | E-readers have no speaker, so there is nothing to play sound through. |
+| **Video** | Video needs many frames per second. E-ink cannot refresh that fast, and the device cannot decode it at a useful speed. |
+
+These decisions can be reviewed if the goal changes.
 
 <details>
 <summary><b>Using the browser</b></summary>
