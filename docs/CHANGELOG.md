@@ -3,16 +3,15 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.9`.
+workspace version is `0.1.10`.
 
 ## [Unreleased]
 
 ### Added
-- The turn (upright or upside down) comes from the Kindle's orientation sensor (its gyro, read from `ABS_PRESSURE` events
-  with the codes KOReader uses), not from FBInk: the device log showed FBInk's view never changes
-  when the Kindle is turned, so the left-handed (upside-down) turn never reached touch or buttons.
-  At start the turn comes from the framework's accelerometer property. The log records the sensor
-  device, `turn at start`, and each `turn from orientation sensor` change.
+- Touch and the page-turn buttons follow the screen's own direction (FBInk's framebuffer rotation,
+  `currentRota` from `fbink -e`), read once a second, not the physical tilt: a tilt while lying on a
+  bed does not flip the controls. The orientation-sensor jitter seen in the device log (values 16
+  and 17 alternating) is gone. The log records `turn at start` and each `display turned` change.
 - Left-handed (upside-down) portrait: touch and the page-turn buttons follow the turn, in our own
   driver (KOReader does not do this for this model). The touch controller reports in the panel's
   upright frame, so each touch is turned when the Kindle is upside down, and the top and bottom

@@ -63,96 +63,45 @@ const SYN_REPORT: u16 = 0x00;
 const ABS_MT_POSITION_X: u16 = 0x35;
 const ABS_MT_POSITION_Y: u16 = 0x36;
 const ABS_MT_TRACKING_ID: u16 = 0x39;
-const ABS_PRESSURE: u16 = 0x18;
-const BTN_TOOL_PEN: u16 = 0x140;
 const KEY_PAGEUP: u16 = 104;
 const KEY_PAGEDOWN: u16 = 109;
 
-/// `_IOR('E', 0x40 + code, struct input_absinfo)` for the 24-byte absinfo.
-/// EVIOCGBIT(ev, len): the set of capabilities of event type `ev`, `len` bytes long.
-const fn eviocgbit(ev: u32, len: u32) -> libc::c_ulong {
-    (0x8000_0000u32 | (len << 16) | (0x45 << 8) | (0x20 + ev)) as libc::c_ulong
-}
-
-fn has_bit(bits: &[u8], bit: usize) -> bool {
-    bits.get(bit / 8).map_or(false, |b| b & (1 << (bit % 8)) != 0)
-}
-
-/// A device's capability bits: its absolute axes and its keys.
-fn capabilities(file: &File) -> Option<(Vec<u8>, Vec<u8>)> {
-    let mut abs = vec![0u8; 8]; // ABS_MAX 0x3f: 8 bytes
-    let mut keys = vec![0u8; 96]; // KEY_MAX 0x2ff: 96 bytes
-    let fd = file.as_raw_fd();
-    let abs_rc = unsafe { libc::ioctl(fd, eviocgbit(EV_ABS as u32, abs.len() as u32) as _, abs.as_mut_ptr()) };
-    let key_rc = unsafe { libc::ioctl(fd, eviocgbit(EV_KEY as u32, keys.len() as u32) as _, keys.as_mut_ptr()) };
-    (abs_rc >= 0 && key_rc >= 0).then_some((abs, keys))
-}
-
-/// The accelerometer that reports the turn: a device with ABS_PRESSURE that is neither the touch
-/// screen nor a pen. KOReader finds it the same way.
-fn find_gsensor() -> Option<String> {
-    for entry in fs::read_dir("/sys/class/input").ok()?.flatten() {
-        let fname = entry.file_name().to_string_lossy().to_string();
-        if !fname.starts_with("event") {
-            continue;
-        }
-        let path = format!("/dev/input/{fname}");
-        let Ok(file) = File::open(&path) else { continue };
-        let Some((abs, keys)) = capabilities(&file) else { continue };
-        let name = fs::read_to_string(entry.path().join("device/name")).unwrap_or_default();
-        let pressure = has_bit(&abs, ABS_PRESSURE as usize);
-        let touch = has_bit(&abs, ABS_MT_POSITION_X as usize);
-        let pen = has_bit(&keys, BTN_TOOL_PEN as usize);
-        log(&format!("input {path} '{}': pressure={pressure} touch={touch} pen={pen}", name.trim()));
-        if pressure && !touch && !pen {
-            return Some(path);
-        }
-    }
-    None
-}
-
-/// The turn for an accelerometer's ABS_PRESSURE value (the codes KOReader uses for the Kindle gyro):
-/// 15, 17, 19 upright; 16, 18, 20 upside down (left-handed portrait). The landscape codes (21, 22)
-/// are ignored: the Kindle does not turn to landscape.
-fn turn_from_gyro(value: i32) -> Option<u32> {
+/// The turn the framebuffer is drawn in, from FBInk's state (`fbink -e` prints `currentRota=N`): 0 upright,
+/// 2 upside down. The screen's own direction, so the controls follow what the reader sees, not the
+/// physical tilt. Landscape (1 and 3) is not supported and gives no turn.
+fn turn_from_fbink(state: &str) -> Option<u32> {
+    let value = state
+        .split([';', '\n'])
+        .find_map(|pair| pair.trim().strip_prefix("currentRota="))?
+        .trim()
+        .parse::<u32>()
+        .ok()?;
     match value {
-        15 | 17 | 19 => Some(0),
-        16 | 18 | 20 => Some(2),
+        0 => Some(0),
+        2 => Some(2),
         _ => None,
     }
 }
 
-/// The turn the framework reports at start (its accelerometer property: U, R, D or L).
-fn startup_turn() -> Option<u32> {
-    let out = Command::new("lipc-get-prop").args(["com.lab126.winmgr", "accelerometer"]).output().ok()?;
-    match String::from_utf8_lossy(&out.stdout).trim() {
-        "U" => Some(0),
-        "D" => Some(2),
-        _ => None,
-    }
+/// Ask FBInk which way the screen is drawn now.
+fn display_turn() -> Option<u32> {
+    let out = Command::new(FBINK).arg("-e").output().ok()?;
+    turn_from_fbink(&String::from_utf8_lossy(&out.stdout))
 }
 
-/// Follow the accelerometer: each turn of the Kindle sets the turn that touch and buttons use.
-fn gsensor_loop(path: String) {
-    let mut file = match File::open(&path) {
-        Ok(f) => f,
-        Err(e) => return log(&format!("cannot open {path}: {e}")),
-    };
-    log(&format!("orientation sensor {path} open"));
+/// Follow the screen's turn: once a second, and each change sets the turn that touch and the page
+/// buttons use.
+fn display_turn_watch() {
     loop {
-        let Some(ev) = read_event(&mut file) else {
-            return log("orientation read failed");
-        };
-        if ev.kind == EV_ABS && ev.code == ABS_PRESSURE {
-            if let Some(rota) = turn_from_gyro(ev.value) {
-                if PANEL_ROTA.swap(rota, Ordering::Relaxed) != rota {
-                    log(&format!("turn from orientation sensor (value {}) -> rota {rota}", ev.value));
-                }
-            }
+        thread::sleep(Duration::from_secs(1));
+        let Some(turn) = display_turn() else { continue };
+        if PANEL_ROTA.swap(turn, Ordering::Relaxed) != turn {
+            log(&format!("display turned: rota {turn}"));
         }
     }
 }
 
+/// `_IOR('E', 0x40 + code, struct input_absinfo)` for the 24-byte absinfo.
 const fn eviocgabs(code: u16) -> libc::c_ulong {
     (0x8000_0000u32 | (24 << 16) | (0x45 << 8) | (0x40 + code as u32)) as libc::c_ulong
 }
@@ -475,15 +424,10 @@ fn main() {
     // While a page loads, the progress strip is drawn and any tap cancels the wait,
     // so the input is handled right away instead of after the page finishes.
     let pump_state = shared.clone();
-    let turn = startup_turn().unwrap_or(0);
+    let turn = display_turn().unwrap_or(0);
     PANEL_ROTA.store(turn, Ordering::Relaxed);
     log(&format!("turn at start: rota {turn}"));
-    match find_gsensor() {
-        Some(path) => {
-            thread::spawn(move || gsensor_loop(path));
-        }
-        None => log("no orientation sensor found; the turn stays at the start value"),
-    }
+    thread::spawn(display_turn_watch);
     let mut b = Browser::new(NATIVE_W, NATIVE_H);
     b.set_pump(Box::new(move |fraction, label| {
         let mut s = pump_state.borrow_mut();
@@ -599,12 +543,11 @@ mod tests {
     }
 
     #[test]
-    fn gyro_codes_give_upright_and_upside_down_and_ignore_landscape() {
-        assert_eq!(turn_from_gyro(19), Some(0));
-        assert_eq!(turn_from_gyro(15), Some(0));
-        assert_eq!(turn_from_gyro(20), Some(2));
-        assert_eq!(turn_from_gyro(21), None);
-        assert_eq!(turn_from_gyro(22), None);
-        assert_eq!(turn_from_gyro(3), None);
+    fn the_framebuffer_turn_is_upright_or_upside_down_and_landscape_gives_none() {
+        assert_eq!(turn_from_fbink("FBINK_VERSION='1.x';viewWidth=1264;currentRota=0;viewHeight=1680"), Some(0));
+        assert_eq!(turn_from_fbink("viewWidth=1264;currentRota=2;viewHeight=1680\n"), Some(2));
+        assert_eq!(turn_from_fbink("currentRota=1;viewWidth=1680"), None);
+        assert_eq!(turn_from_fbink("currentRota=3"), None);
+        assert_eq!(turn_from_fbink("viewWidth=1264"), None);
     }
 }
