@@ -3,11 +3,21 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.5`.
+workspace version is `0.1.9`.
 
 ## [Unreleased]
 
 ### Added
+- The turn (upright or upside down) comes from the Kindle's orientation sensor (its gyro, read from `ABS_PRESSURE` events
+  with the codes KOReader uses), not from FBInk: the device log showed FBInk's view never changes
+  when the Kindle is turned, so the left-handed (upside-down) turn never reached touch or buttons.
+  At start the turn comes from the framework's accelerometer property. The log records the sensor
+  device, `turn at start`, and each `turn from orientation sensor` change.
+- Left-handed (upside-down) portrait: touch and the page-turn buttons follow the turn, in our own
+  driver (KOReader does not do this for this model). The touch controller reports in the panel's
+  upright frame, so each touch is turned when the Kindle is upside down, and the top and bottom
+  page-turn buttons trade their directions, so "next" stays on the reader's side. The launcher log
+  shows each touch's native and screen coordinates and the turn.
 - Quick settings panel, drawn from the top like the Kindle's own: a swipe down that starts within
   40 px of the top edge opens it. It shows the clock and date, battery, Wi-Fi (an On/Off switch),
   frontlight brightness and warmth as 25-step bars with − and + at the ends, and a Close handle.

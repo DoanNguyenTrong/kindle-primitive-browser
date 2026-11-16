@@ -230,10 +230,10 @@ impl Browser {
             self.refresh_suggestions();
         }
         if field_changed {
-            self.touch(0, KB_Y, Wave::Text);
+            self.touch(0, self.kb_y(), Wave::Text);
         }
         if layer_changed {
-            self.touch(KB_Y, self.height, Wave::Text);
+            self.touch(self.kb_y(), self.height, Wave::Text);
         }
     }
 
@@ -282,7 +282,7 @@ impl Browser {
         let key: String = self.suggestions.iter().map(|(u, _, _)| u.as_str()).collect::<Vec<_>>().join("\n");
         if self.suggest.as_ref().map_or(true, |c| c.key != key) {
             let html = ui::field_list(&self.suggestions);
-            let mut c = self.render_layer(&html, "kb://keyboard/", self.width, KB_Y - TOP_H);
+            let mut c = self.render_layer(&html, "kb://keyboard/", self.width, self.kb_y() - TOP_H);
             c.key = key;
             self.suggest = Some(c);
         }
@@ -292,8 +292,8 @@ impl Browser {
     pub(super) fn ensure_key(&mut self, layer: Layer) -> &mut Cached {
         let idx = layer as usize;
         if self.keys[idx].is_none() {
-            let html = ui::keyboard_for(layer);
-            let c = self.render_layer(&html, "kb://keyboard/", self.width, self.height - KB_Y);
+            let html = ui::keyboard_for(layer, self.height - self.kb_y());
+            let c = self.render_layer(&html, "kb://keyboard/", self.width, self.height - self.kb_y());
             self.keys[idx] = Some(c);
         }
         self.keys[idx].as_mut().expect("key layer")

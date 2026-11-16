@@ -15,7 +15,10 @@ use std::{
     panic::{self, AssertUnwindSafe},
     process::Command,
     rc::Rc,
-    sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender},
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        mpsc::{channel, Receiver, RecvTimeoutError, Sender},
+    },
     thread,
     time::{Duration, Instant},
 };
@@ -26,8 +29,30 @@ use kb_app::{encode_png, Browser, Update, Wave, PROGRESS_H, TOP_H};
 
 const DIR: &str = "/mnt/us/browser";
 const FBINK: &str = "/mnt/us/libkh/bin/fbink";
-const W: u32 = 1264;
-const H: u32 = 1680;
+/// The panel's native frame: upright portrait. The touch controller always reports in this frame,
+/// whichever way the Kindle is turned, so touches are turned into the screen's frame here.
+const NATIVE_W: u32 = 1264;
+const NATIVE_H: u32 = 1680;
+
+/// The turn of the Kindle: 0 upright, 2 upside down (the left-handed portrait). The Kindle has no
+/// landscape, so the browser always draws the portrait screen.
+static PANEL_ROTA: AtomicU32 = AtomicU32::new(0);
+
+/// Turn a point from the panel's native frame into the screen's frame for the turn. This is the same
+/// turn the picture gets, so a finger lands on what it touches in every orientation.
+fn turn_point(rota: u32, x: f32, y: f32) -> (f32, f32) {
+    if rota == 2 {
+        (NATIVE_W as f32 - 1.0 - x, NATIVE_H as f32 - 1.0 - y)
+    } else {
+        (x, y)
+    }
+}
+
+/// Whether the page-turn buttons swap their directions for this turn. They are on the top and bottom
+/// edges: upside down, the button on the reader's "next" side moves, so forward and back trade places.
+fn page_buttons_swapped(rota: u32) -> bool {
+    rota == 2
+}
 /// Full-screen flash every N partial refreshes, to clear e-ink ghosting.
 const FLASH_EVERY: u32 = 8;
 
@@ -38,10 +63,96 @@ const SYN_REPORT: u16 = 0x00;
 const ABS_MT_POSITION_X: u16 = 0x35;
 const ABS_MT_POSITION_Y: u16 = 0x36;
 const ABS_MT_TRACKING_ID: u16 = 0x39;
+const ABS_PRESSURE: u16 = 0x18;
+const BTN_TOOL_PEN: u16 = 0x140;
 const KEY_PAGEUP: u16 = 104;
 const KEY_PAGEDOWN: u16 = 109;
 
 /// `_IOR('E', 0x40 + code, struct input_absinfo)` for the 24-byte absinfo.
+/// EVIOCGBIT(ev, len): the set of capabilities of event type `ev`, `len` bytes long.
+const fn eviocgbit(ev: u32, len: u32) -> libc::c_ulong {
+    (0x8000_0000u32 | (len << 16) | (0x45 << 8) | (0x20 + ev)) as libc::c_ulong
+}
+
+fn has_bit(bits: &[u8], bit: usize) -> bool {
+    bits.get(bit / 8).map_or(false, |b| b & (1 << (bit % 8)) != 0)
+}
+
+/// A device's capability bits: its absolute axes and its keys.
+fn capabilities(file: &File) -> Option<(Vec<u8>, Vec<u8>)> {
+    let mut abs = vec![0u8; 8]; // ABS_MAX 0x3f: 8 bytes
+    let mut keys = vec![0u8; 96]; // KEY_MAX 0x2ff: 96 bytes
+    let fd = file.as_raw_fd();
+    let abs_rc = unsafe { libc::ioctl(fd, eviocgbit(EV_ABS as u32, abs.len() as u32) as _, abs.as_mut_ptr()) };
+    let key_rc = unsafe { libc::ioctl(fd, eviocgbit(EV_KEY as u32, keys.len() as u32) as _, keys.as_mut_ptr()) };
+    (abs_rc >= 0 && key_rc >= 0).then_some((abs, keys))
+}
+
+/// The accelerometer that reports the turn: a device with ABS_PRESSURE that is neither the touch
+/// screen nor a pen. KOReader finds it the same way.
+fn find_gsensor() -> Option<String> {
+    for entry in fs::read_dir("/sys/class/input").ok()?.flatten() {
+        let fname = entry.file_name().to_string_lossy().to_string();
+        if !fname.starts_with("event") {
+            continue;
+        }
+        let path = format!("/dev/input/{fname}");
+        let Ok(file) = File::open(&path) else { continue };
+        let Some((abs, keys)) = capabilities(&file) else { continue };
+        let name = fs::read_to_string(entry.path().join("device/name")).unwrap_or_default();
+        let pressure = has_bit(&abs, ABS_PRESSURE as usize);
+        let touch = has_bit(&abs, ABS_MT_POSITION_X as usize);
+        let pen = has_bit(&keys, BTN_TOOL_PEN as usize);
+        log(&format!("input {path} '{}': pressure={pressure} touch={touch} pen={pen}", name.trim()));
+        if pressure && !touch && !pen {
+            return Some(path);
+        }
+    }
+    None
+}
+
+/// The turn for an accelerometer's ABS_PRESSURE value (the codes KOReader uses for the Kindle gyro):
+/// 15, 17, 19 upright; 16, 18, 20 upside down (left-handed portrait). The landscape codes (21, 22)
+/// are ignored: the Kindle does not turn to landscape.
+fn turn_from_gyro(value: i32) -> Option<u32> {
+    match value {
+        15 | 17 | 19 => Some(0),
+        16 | 18 | 20 => Some(2),
+        _ => None,
+    }
+}
+
+/// The turn the framework reports at start (its accelerometer property: U, R, D or L).
+fn startup_turn() -> Option<u32> {
+    let out = Command::new("lipc-get-prop").args(["com.lab126.winmgr", "accelerometer"]).output().ok()?;
+    match String::from_utf8_lossy(&out.stdout).trim() {
+        "U" => Some(0),
+        "D" => Some(2),
+        _ => None,
+    }
+}
+
+/// Follow the accelerometer: each turn of the Kindle sets the turn that touch and buttons use.
+fn gsensor_loop(path: String) {
+    let mut file = match File::open(&path) {
+        Ok(f) => f,
+        Err(e) => return log(&format!("cannot open {path}: {e}")),
+    };
+    log(&format!("orientation sensor {path} open"));
+    loop {
+        let Some(ev) = read_event(&mut file) else {
+            return log("orientation read failed");
+        };
+        if ev.kind == EV_ABS && ev.code == ABS_PRESSURE {
+            if let Some(rota) = turn_from_gyro(ev.value) {
+                if PANEL_ROTA.swap(rota, Ordering::Relaxed) != rota {
+                    log(&format!("turn from orientation sensor (value {}) -> rota {rota}", ev.value));
+                }
+            }
+        }
+    }
+}
+
 const fn eviocgabs(code: u16) -> libc::c_ulong {
     (0x8000_0000u32 | (24 << 16) | (0x45 << 8) | (0x40 + code as u32)) as libc::c_ulong
 }
@@ -147,6 +258,7 @@ fn touch_loop(path: String, tx: Sender<Ev>) {
                     active = true;
                     start = None;
                     down_at = Instant::now();
+
                 } else if active {
                     active = false;
                     let end = last;
@@ -185,10 +297,15 @@ fn touch_loop(path: String, tx: Sender<Ev>) {
             (EV_ABS, ABS_MT_POSITION_Y) => raw_y = ev.value,
             (EV_SYN, SYN_REPORT) => {
                 if active {
-                    last = (scale(raw_x, &xi, W), scale(raw_y, &yi, H));
+                    let rota = PANEL_ROTA.load(Ordering::Relaxed);
+                    let (nx, ny) = (scale(raw_x, &xi, NATIVE_W), scale(raw_y, &yi, NATIVE_H));
+                    last = turn_point(rota, nx, ny);
                     if start.is_none() {
                         start = Some(last);
-                        log(&format!("touch down raw=({raw_x},{raw_y}) screen=({:.0},{:.0})", last.0, last.1));
+                        log(&format!(
+                            "touch down raw=({raw_x},{raw_y}) native=({nx:.0},{ny:.0}) rota={rota} screen=({:.0},{:.0})",
+                            last.0, last.1
+                        ));
                     }
                 }
             }
@@ -211,9 +328,11 @@ fn button_loop(path: String, tx: Sender<Ev>) {
         if ev.kind == EV_KEY {
             log(&format!("key code={} value={}", ev.code, ev.value));
             if ev.value == 1 {
+                let swapped = page_buttons_swapped(PANEL_ROTA.load(Ordering::Relaxed));
+                let forward = if swapped { -1.0 } else { 1.0 };
                 let out = match ev.code {
-                    KEY_PAGEDOWN => Some(Ev::Page(1.0)),
-                    KEY_PAGEUP => Some(Ev::Page(-1.0)),
+                    KEY_PAGEDOWN => Some(Ev::Page(forward)),
+                    KEY_PAGEUP => Some(Ev::Page(-forward)),
                     _ => None,
                 };
                 if let Some(e) = out {
@@ -261,7 +380,7 @@ impl Display {
             }
         };
         let region = u.region();
-        blit_region(y0, y1 - y0, &region, wave, flash);
+        blit_region(u.width, y0, y1 - y0, &region, wave, flash);
     }
 
     /// Progress strip under the address bar. Cheap, and at most ten times a second.
@@ -270,20 +389,21 @@ impl Display {
             return;
         }
         self.last_progress = Instant::now();
-        let mut strip = vec![200u8; (W * PROGRESS_H) as usize];
-        let fill = (fraction.clamp(0.0, 1.0) * W as f32) as usize;
+        let w = NATIVE_W;
+        let mut strip = vec![200u8; (w * PROGRESS_H) as usize];
+        let fill = (fraction.clamp(0.0, 1.0) * w as f32) as usize;
         for row in 0..PROGRESS_H as usize {
             for x in 0..fill {
-                strip[row * W as usize + x] = 0;
+                strip[row * w as usize + x] = 0;
             }
         }
-        blit_region(TOP_H - PROGRESS_H, PROGRESS_H, &strip, "DU", false);
+        blit_region(w, TOP_H - PROGRESS_H, PROGRESS_H, &strip, "DU", false);
     }
 }
 
 /// Show `rows` rows of gray pixels at row `y` with the given fbink waveform.
-fn blit_region(y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) {
-    let png = match encode_png(W, rows, gray) {
+fn blit_region(width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) {
+    let png = match encode_png(width, rows, gray) {
         Ok(p) => p,
         Err(e) => return log(&format!("png: {e}")),
     };
@@ -355,7 +475,16 @@ fn main() {
     // While a page loads, the progress strip is drawn and any tap cancels the wait,
     // so the input is handled right away instead of after the page finishes.
     let pump_state = shared.clone();
-    let mut b = Browser::new(W, H);
+    let turn = startup_turn().unwrap_or(0);
+    PANEL_ROTA.store(turn, Ordering::Relaxed);
+    log(&format!("turn at start: rota {turn}"));
+    match find_gsensor() {
+        Some(path) => {
+            thread::spawn(move || gsensor_loop(path));
+        }
+        None => log("no orientation sensor found; the turn stays at the start value"),
+    }
+    let mut b = Browser::new(NATIVE_W, NATIVE_H);
     b.set_pump(Box::new(move |fraction, label| {
         let mut s = pump_state.borrow_mut();
         let mut interrupted = false;
@@ -448,4 +577,34 @@ fn main() {
         }
     }
     log("bye");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upside_down_turns_the_touch_frame_and_upright_does_not() {
+        let (w, h) = (NATIVE_W as f32 - 1.0, NATIVE_H as f32 - 1.0);
+        assert_eq!(turn_point(0, 0.0, 0.0), (0.0, 0.0));
+        // Left-handed portrait: the top-left of the panel is the bottom-right of the screen.
+        assert_eq!(turn_point(2, 0.0, 0.0), (w, h));
+        assert_eq!(turn_point(2, w, h), (0.0, 0.0));
+    }
+
+    #[test]
+    fn page_buttons_trade_places_only_upside_down() {
+        assert!(!page_buttons_swapped(0));
+        assert!(page_buttons_swapped(2));
+    }
+
+    #[test]
+    fn gyro_codes_give_upright_and_upside_down_and_ignore_landscape() {
+        assert_eq!(turn_from_gyro(19), Some(0));
+        assert_eq!(turn_from_gyro(15), Some(0));
+        assert_eq!(turn_from_gyro(20), Some(2));
+        assert_eq!(turn_from_gyro(21), None);
+        assert_eq!(turn_from_gyro(22), None);
+        assert_eq!(turn_from_gyro(3), None);
+    }
 }

@@ -249,6 +249,6 @@ fn timed(label: &str, b: &mut Browser, out: &str, act: impl FnOnce(&mut Browser)
 }
 
 fn write(update: &Update, out: &str) {
-    let png = encode_png(W, H, &update.gray).expect("encode");
+    let png = encode_png(update.width, update.height, &update.gray).expect("encode");
     std::fs::write(out, png).expect("write frame");
 }

@@ -41,6 +41,11 @@ pub fn encode_png(width: u32, height: u32, gray: &[u8]) -> Result<Vec<u8>, Strin
 }
 
 impl Browser {
+    /// Top of the keyboard's keys on this screen.
+    pub(super) fn kb_y(&self) -> u32 {
+        kb_top(self.height)
+    }
+
     /// Called regularly by the driver (on idle). Brings in held-back images and
     /// clears a notice when its time is up.
     pub fn tick(&mut self) -> Option<Update> {
@@ -213,9 +218,9 @@ impl Browser {
         let bar = self.ensure_field().gray.clone();
         blit(&mut out, w, 0, &bar, TOP_H);
         let list = self.ensure_suggestions().gray.clone();
-        blit(&mut out, w, TOP_H, &list, KB_Y - TOP_H);
+        blit(&mut out, w, TOP_H, &list, self.kb_y() - TOP_H);
         let keys = self.ensure_key(self.layer).gray.clone();
-        blit(&mut out, w, KB_Y, &keys, h - KB_Y);
+        blit(&mut out, w, self.kb_y(), &keys, h - self.kb_y());
         out
     }
 

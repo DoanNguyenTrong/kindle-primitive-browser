@@ -119,7 +119,8 @@ All screens drawn by the browser itself use one stylesheet built from constants:
   scrolling body. Painting, hit testing, and selector lookup use the same offsets. Done
   stays in the header; Menu also has Exit. Rows are at least 96 px.
 - Side margin 20 px on bars and sheets, 24 px on pages; 8 px spacing unit.
-- Keyboard: keys at the bottom 730 px of the screen (`KB_Y` = 950).
+- Keyboard: the key area scales with screen height through `kb_top(height)`; at the
+  1680 px portrait height the keys start at 950 px and occupy the bottom 730 px.
 
 Internal pages and chrome are HTML rendered by the same engine, at scale 1. Web pages are
 laid out at the selected width (412/600/800 CSS px, default 600) and scaled to the panel

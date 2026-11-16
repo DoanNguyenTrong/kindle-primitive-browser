@@ -446,7 +446,7 @@ pub fn field_list(suggestions: &[(String, String, bool)]) -> String {
 }
 
 /// Keyboard keys: rows from `keyboard_rows`, in a 16 px frame at the bottom.
-pub fn keyboard(rows: &[Vec<Key>]) -> String {
+pub fn keyboard(rows: &[Vec<Key>], area_h: u32) -> String {
     let mut out = String::new();
     for row in rows {
         let keys: String = row
@@ -464,16 +464,21 @@ pub fn keyboard(rows: &[Vec<Key>]) -> String {
             .collect();
         out.push_str(&format!(r#"<div class="krow">{keys}</div>"#));
     }
-    let extra = "body{padding:14px 12px 18px;border-top:2px solid #e2e2e2;background:#fff}\
-.krow{display:flex;gap:8px;margin-bottom:8px}\
-.k{display:block;height:124px;line-height:124px;text-align:center;border:1px solid #bdbdbd;border-radius:12px;background:#f7f7f7;color:#111;font-size:48px;text-decoration:none}\
-.k.sm{font-size:30px}.k.on,.k.go{background:#111;color:#fff;border-color:#111}";
-    document("Keyboard", &out, extra)
+    // Keys are 124 px tall on the portrait keyboard; a shorter area (landscape) shrinks them to fit.
+    let rows_n = rows.len().max(1) as u32;
+    let key_h = (area_h.saturating_sub(32 + 8 * rows_n) / rows_n).min(124);
+    let extra = format!(
+        "body{{padding:14px 12px 18px;border-top:2px solid #e2e2e2;background:#fff}}\
+.krow{{display:flex;gap:8px;margin-bottom:8px}}\
+.k{{display:block;height:{key_h}px;line-height:{key_h}px;text-align:center;border:1px solid #bdbdbd;border-radius:12px;background:#f7f7f7;color:#111;font-size:48px;text-decoration:none}}\
+.k.sm{{font-size:30px}}.k.on,.k.go{{background:#111;color:#fff;border-color:#111}}"
+    );
+    document("Keyboard", &out, &extra)
 }
 
 /// Keyboard layers from the layout rows (`Layer` decides which set).
-pub fn keyboard_for(layer: Layer) -> String {
-    keyboard(&crate::keyboard_rows(layer))
+pub fn keyboard_for(layer: Layer, area_h: u32) -> String {
+    keyboard(&crate::keyboard_rows(layer), area_h)
 }
 
 /// One row of a list page: link, title and caption, and an optional trailing action.

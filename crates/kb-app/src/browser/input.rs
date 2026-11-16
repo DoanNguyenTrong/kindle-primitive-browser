@@ -17,7 +17,7 @@ impl Browser {
             let cached = self.ensure_suggestions();
             cached.page.scroll_by(dy);
             cached.gray = cached.page.render_gray_at(0);
-            self.touch(TOP_H, KB_Y, Wave::Text);
+            self.touch(TOP_H, self.kb_y(), Wave::Text);
             return;
         }
         // An open sheet (menu, tabs) takes the swipe and scrolls its own list.
@@ -115,13 +115,16 @@ impl Browser {
                         self.keyboard_action(&href);
                     }
                 }
-            } else if y < KB_Y as f32 {
+            } else if y < self.kb_y() as f32 {
                 // The suggestion list: a tap on a row opens it.
                 if let Some(href) = self.ensure_suggestions().page.link_at(x, y - TOP_H as f32) {
                     self.keyboard_action(&href);
                 }
-            } else if let Some(href) = self.ensure_key(self.layer).page.link_at(x, y - KB_Y as f32)
-            {
+            } else if let Some(href) = {
+                let kb = self.kb_y() as f32;
+                let layer = self.layer;
+                self.ensure_key(layer).page.link_at(x, y - kb)
+            } {
                 self.keyboard_action(&href);
             }
             return;
@@ -265,18 +268,17 @@ impl Browser {
             if y < TOP_H as f32 {
                 return self.ensure_field().page.link_box(x, y);
             }
-            if y < KB_Y as f32 {
+            if y < self.kb_y() as f32 {
                 let (bx, by, bw, bh) = self
                     .ensure_suggestions()
                     .page
                     .link_box(x, y - TOP_H as f32)?;
                 return Some((bx, by + TOP_H as f32, bw, bh));
             }
-            let (bx, by, bw, bh) = self
-                .ensure_key(self.layer)
-                .page
-                .link_box(x, y - KB_Y as f32)?;
-            return Some((bx, by + KB_Y as f32, bw, bh));
+            let kb = self.kb_y() as f32;
+            let layer = self.layer;
+            let (bx, by, bw, bh) = self.ensure_key(layer).page.link_box(x, y - kb)?;
+            return Some((bx, by + kb, bw, bh));
         }
         if let Some(sheet) = self.sheet {
             if y >= h - MENU_H as f32 {

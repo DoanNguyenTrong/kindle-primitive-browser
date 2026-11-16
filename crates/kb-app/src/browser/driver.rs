@@ -27,10 +27,10 @@ impl Browser {
             if let Some(b) = self.ensure_suggestions().page.element_box(selector) {
                 let (x, y) = centre(b);
                 let y = y + TOP_H as f32;
-                return (y >= TOP_H as f32 && y < KB_Y as f32).then_some((x, y));
+                return (y >= TOP_H as f32 && y < self.kb_y() as f32).then_some((x, y));
             }
             let (x, y) = centre(self.ensure_key(self.layer).page.element_box(selector)?);
-            return Some((x, y + KB_Y as f32));
+            return Some((x, y + self.kb_y() as f32));
         }
         if let Some(sheet) = self.sheet {
             if let Some(b) = self.ensure_sheet_header(sheet).page.element_box(selector) {
