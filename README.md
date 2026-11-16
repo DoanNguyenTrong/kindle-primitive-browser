@@ -1,4 +1,6 @@
-# Kindle Oasis 3 browser
+# Primitive Browser
+
+A web browser for the Kindle Oasis 3.
 
 A native browser for a jailbroken Kindle Oasis 3 (firmware 5.18.2, KOReader/KPM installed).
 HTML, CSS and a JavaScript subset run on the device; the screen is painted in 8-bit grayscale.
@@ -46,7 +48,7 @@ cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf
 sh deploy/install.sh     # requires Kindle mounted at /Volumes/Kindle
 ```
 
-Eject safely and open **KB Browser** in the library. `browser/start.txt` sets the start page;
+Eject safely and open **Primitive Browser** in the library. `browser/start.txt` sets the start page;
 `browser/data/` stores browsing data; `browser/log-browser.txt` holds the bounded log.
 
 The bottom toolbar contains Back, Forward, tabs, bookmark and Menu. Swipe vertically to

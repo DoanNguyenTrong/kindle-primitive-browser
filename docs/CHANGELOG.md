@@ -56,6 +56,12 @@ workspace version is `0.1.0`.
 - Device log now records resident memory (`rss`) after each action.
 
 ### Changed
+- Renamed to **Primitive Browser**: library launcher `documents/Primitive Browser.sh` (the
+  installer removes the old `KB Browser.sh`), user agent `PrimitiveBrowser/0.1`, and the logo
+  (`assets/primitive-icon.png`, from `primitive-ai-website/public/prai-icon.png`) on the home
+  screen. The logo is built into the binary, so it shows offline.
+- `data:` URLs now load (base64 and percent-encoded). Before, they were answered empty, so inline
+  images on web pages were blank.
 - Address bar while typing: the URL field is in the same 96 px bar as the page's address bar,
   with Cancel where the reload button sits. The Go button in the header is removed; the keyboard's
   Go key submits. The suggestions are a separate list between the bar and the keys, and they

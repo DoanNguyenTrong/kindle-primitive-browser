@@ -211,10 +211,10 @@ impl Browser {
             self.refresh_suggestions();
         }
         if field_changed {
-            self.touch(0, KB_Y, Wave::Fast);
+            self.touch(0, KB_Y, Wave::Text);
         }
         if layer_changed {
-            self.touch(KB_Y, self.height, Wave::Fast);
+            self.touch(KB_Y, self.height, Wave::Text);
         }
     }
 

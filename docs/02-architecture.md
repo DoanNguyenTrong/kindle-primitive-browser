@@ -146,7 +146,9 @@ while the Kindle UI is stopped), `kb.pid` (browser process while it runs).
 
 ## 2.8 Device lifecycle
 
-Entry point: `documents/KB Browser.sh`, installed from `deploy/Browser.sh`.
+Entry point: `documents/Primitive Browser.sh`, installed from `deploy/Browser.sh` (it replaces the launcher's
+old name, `KB Browser.sh`). The logo is `assets/primitive-icon.png`, built into the binary for the
+home screen and copied to `browser/icon.png` for the launcher.
 
 1. A marker file from an earlier run means the Kindle UI may still be stopped: it is
    restored first.

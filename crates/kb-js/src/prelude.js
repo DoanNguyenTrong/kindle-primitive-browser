@@ -353,7 +353,7 @@
   globalThis.self = globalThis;
   globalThis.scrollX = 0; globalThis.scrollY = 0; globalThis.pageXOffset = 0; globalThis.pageYOffset = 0;
   globalThis.scrollTo = () => {}; globalThis.scrollBy = () => {};
-  globalThis.navigator = { userAgent: 'kb-browser/0.1 (Linux; Kindle)', language: 'en', onLine: true };
+  globalThis.navigator = { userAgent: 'Mozilla/5.0 (Linux; Kindle; U) PrimitiveBrowser/0.1', language: 'en', onLine: true };
   const href = globalThis.__kbUrl;
   let parsed = { hostname: '', protocol: '', pathname: '/' };
   const m = /^(https?:)\/\/([^/?#]*)([^?#]*)/.exec(href);

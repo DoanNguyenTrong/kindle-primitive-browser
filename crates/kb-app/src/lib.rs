@@ -8,6 +8,7 @@
 //! page; http(s) is a normal navigation.
 
 mod addr;
+mod brand;
 mod browser;
 mod html;
 mod layout;
@@ -16,6 +17,7 @@ mod storage;
 mod ui;
 
 pub use addr::normalize;
+pub use brand::NAME as BROWSER_NAME;
 pub use browser::{encode_png, Browser, Cancelled, Pump, Update, Wave};
 pub use layout::{BOT_H, KB_Y, MENU_H, PROGRESS_H, SHEET_TITLE_H, TOP_H};
 pub use settings::{width_name, PAGE_WIDTHS};

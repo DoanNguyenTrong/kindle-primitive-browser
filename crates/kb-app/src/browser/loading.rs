@@ -148,7 +148,8 @@ impl Browser {
             None
         };
         let net = self.net.clone();
-        net.set_images_allowed(self.settings.images);
+        // The browser's own pages (home with its logo) always show their images.
+        net.set_images_allowed(self.settings.images || !is_web);
         let built = {
             let mut waiting = || {
                 let req = stats.requested.load(std::sync::atomic::Ordering::Relaxed);

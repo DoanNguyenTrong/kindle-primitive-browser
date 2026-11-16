@@ -1,6 +1,6 @@
 #!/bin/sh
-# Name: KB Browser
-# Author: kindle-browser
+# Name: Primitive Browser
+# Author: Primitive AI
 # DontUseFBInk
 #
 # Library launcher. Stops the Kindle UI framework while the browser runs, runs

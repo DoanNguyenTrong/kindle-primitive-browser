@@ -286,15 +286,16 @@ pub fn tabs(tabs: &[(String, String)], active: usize) -> String {
 
 /// Keyboard header and address field, above the keys. Input mode edits a page field.
 /// Most characters of the address shown at once in the bar; the window follows the caret.
-const FIELD_VISIBLE_CHARS: usize = 34;
+const FIELD_VISIBLE_CHARS: usize = 48;
 
 /// The address bar while the keyboard is open. It is the same bar as the page's address bar: the
 /// URL field fills the width, and Cancel sits where the reload button sits. A selected address
 /// is highlighted and has no caret.
 pub fn field_bar(typed: &[char], caret: usize, selected: bool) -> String {
     let caret = caret.min(typed.len());
-    // Show a window of the text that keeps the caret in view, with an ellipsis when cut.
-    let start = if caret >= FIELD_VISIBLE_CHARS { caret + 1 - FIELD_VISIBLE_CHARS } else { 0 };
+    // A selected address shows its beginning (the part the next key replaces); otherwise the
+    // window follows the caret. An ellipsis marks each side that is cut.
+    let start = if selected || caret < FIELD_VISIBLE_CHARS { 0 } else { caret + 1 - FIELD_VISIBLE_CHARS };
     let end = (start + FIELD_VISIBLE_CHARS).min(typed.len());
     let mut text = String::new();
     if selected {
@@ -309,6 +310,9 @@ pub fn field_bar(typed: &[char], caret: usize, selected: bool) -> String {
         }
         text.push_str(&format!(r#"<a class="ch" href="kb:pos:{i}">{}</a>"#, esc(&typed[i].to_string())));
     }
+    if end < typed.len() {
+        text.push_str(r#"<span class="dim">…</span>"#);
+    }
     if selected {
         text.push_str("</span>");
     } else if caret == typed.len() {
@@ -320,7 +324,9 @@ pub fn field_bar(typed: &[char], caret: usize, selected: bool) -> String {
     let body = format!(
         r#"<div class="bar"><div class="omni field-omni"><span class="field-text">{text}</span></div><a class="btn" href="kb:cancel">Cancel</a></div>"#
     );
-    let extra = ".ch{text-decoration:none}.sel{background:#cfcfcf;border-radius:6px}\
+    // A selected address is shown inverted (dark with white text), as browsers do, so the reader
+    // can see that the next key replaces it.
+    let extra = ".ch{text-decoration:none}.sel{display:inline-block;background:#111;border-radius:6px;padding:0 6px}.sel .ch{color:#fff}\
 .field-omni{min-width:0}.field-text{overflow:hidden;white-space:nowrap}.dim{color:#777}";
     document("Address field", &body, extra)
 }
@@ -467,11 +473,16 @@ pub fn home(bookmarks: &[(String, String)], recent: &[(String, String)], bm_open
         format!(r#"<div class="recent-list">{rows}</div>"#)
     };
     let body = format!(
-        r#"<div class="home"><section>{bm_head}{bm_body}</section><section>{rec_head}{recent_body}</section></div>"#,
+        r#"<div class="home"><div class="brand"><img class="brand-logo" src="{logo}" alt=""><span class="brand-name">{name}</span></div><section>{bm_head}{bm_body}</section><section>{rec_head}{recent_body}</section></div>"#,
+        logo = crate::brand::logo_data_url(),
+        name = esc(crate::brand::NAME),
         bm_head = section_head("BOOKMARKS", bookmarks.len(), "kb:homeshow:bm", bm_open, &manage),
         rec_head = section_head("RECENT", recent.len(), "kb:homeshow:recent", recent_open, ""),
     );
     let extra = ".home{padding:24px 24px 0}\
+.brand{display:flex;align-items:center;gap:18px;padding:4px 0 8px}\
+.brand-logo{width:72px;height:69px;background:none}\
+.brand-name{font-size:36px;font-weight:bold;color:#111}\
 .sechead{display:flex;align-items:center;gap:16px;height:64px;margin-top:20px;font-size:22px;letter-spacing:1px;color:#555}\
 .sechead-count{font-size:22px;color:#888}\
 .sechead-link,.sechead-toggle{display:flex;align-items:center;height:64px;padding:0 4px;font-size:26px;letter-spacing:0;color:#111;text-decoration:none}\

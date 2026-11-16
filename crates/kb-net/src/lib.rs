@@ -17,7 +17,7 @@ pub mod store;
 
 use blitz_traits::net::{Bytes, NetHandler, NetProvider, Request};
 
-const USER_AGENT: &str = "Mozilla/5.0 (Linux; Kindle; U) kb-browser/0.1";
+const USER_AGENT: &str = "Mozilla/5.0 (Linux; Kindle; U) PrimitiveBrowser/0.1";
 
 #[derive(Debug, Clone)]
 pub struct Fetched {
@@ -339,6 +339,62 @@ impl SyncNet {
     }
 }
 
+/// The content of a `data:` URL (base64 or percent-encoded), or None when it is malformed.
+pub fn decode_data_url(url: &str) -> Option<Vec<u8>> {
+    let (meta, data) = url.strip_prefix("data:")?.split_once(',')?;
+    if meta.ends_with(";base64") {
+        decode_base64(data)
+    } else {
+        Some(percent_decode(data))
+    }
+}
+
+/// Standard or URL-safe base64; whitespace is skipped and padding ends the data.
+fn decode_base64(s: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    let (mut buf, mut bits) = (0u32, 0u32);
+    for c in s.bytes() {
+        let v = match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' => break,
+            b' ' | b'\n' | b'\r' | b'\t' => continue,
+            _ => return None,
+        };
+        buf = (buf << 6) | u32::from(v);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+            buf &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
+}
+
+/// `%XX` escapes to bytes; everything else as is.
+fn percent_decode(s: &str) -> Vec<u8> {
+    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let (Some(hi), Some(lo)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push(hi * 16 + lo);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    out
+}
+
 /// True for URLs that point at a raster or vector image (by extension).
 pub fn is_image_url(url: &str) -> bool {
     let path = url.split(['?', '#']).next().unwrap_or(url).to_ascii_lowercase();
@@ -350,7 +406,17 @@ pub fn is_image_url(url: &str) -> bool {
 impl NetProvider for SyncNet {
     fn fetch(&self, _doc_id: usize, request: Request, handler: Box<dyn NetHandler>) {
         let url = request.url.to_string();
-        // Inline-only schemes (data:, blob:) and blocked trackers are answered empty.
+        // A data: URL carries its content inline. Images still follow the images setting.
+        if url.starts_with("data:") {
+            if url.starts_with("data:image/") && !self.images_allowed.load(Ordering::Acquire) {
+                handler.bytes(url, Bytes::new());
+                return;
+            }
+            let bytes = decode_data_url(&url).unwrap_or_default();
+            handler.bytes(url, Bytes::from(bytes));
+            return;
+        }
+        // Other inline-only schemes (blob:) and blocked trackers are answered empty.
         if !(url.starts_with("http://") || url.starts_with("https://")) || is_blocked(&url) {
             handler.bytes(url, Bytes::new());
             return;
@@ -377,6 +443,16 @@ impl NetProvider for SyncNet {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_base64_and_percent_encoded_data_urls() {
+        let png = decode_data_url("data:image/png;base64,iVBORw0KGgo=").unwrap();
+        assert_eq!(&png[..4], b"\x89PNG");
+        assert_eq!(decode_data_url("data:text/plain,hi%20there").unwrap(), b"hi there");
+        assert_eq!(decode_data_url("data:text/plain;base64,aGk=").unwrap(), b"hi");
+        assert!(decode_data_url("data:text/plain;base64,@@").is_none());
+        assert!(decode_data_url("not-a-data-url").is_none());
+    }
 
     #[test]
     fn blocks_ad_and_tracker_hosts_and_their_subdomains() {

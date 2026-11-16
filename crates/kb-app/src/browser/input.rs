@@ -92,7 +92,7 @@ impl Browser {
                         let right = field_box.map_or(false, |(bx, _, bw, _)| x > bx + bw / 2.0);
                         self.caret = (n + usize::from(right)).min(self.typed.len());
                         self.select_all = false;
-                        self.touch(0, TOP_H, Wave::Fast);
+                        self.touch(0, TOP_H, Wave::Text);
                     } else {
                         self.keyboard_action(&href);
                     }
