@@ -7,6 +7,18 @@ workspace version is `0.1.17`.
 
 ## [Unreleased]
 
+### Added
+- Project documentation for publishing: a full README (status, features, install, build, testing,
+  structure), `docs/INSTALL.md` for installing the release package without building, `docs/VERSIONING.md`
+  for version numbers, tags and the release steps, `docs/DEVICES.md` for the support matrix and the plan
+  for other Kindle models, and `CONTRIBUTING.md`.
+- Release packaging: `scripts/package-release.sh` writes `dist/primitive-browser-<version>.zip` with its
+  SHA-256 file. The package holds `browser/` and `documents/`, ready to copy onto the Kindle.
+- GitHub Actions: `ci.yml` runs unit tests, launcher checks, the desktop regression with screenshots and
+  the ARMv7 build on every push and pull request; `release.yml` publishes the package when a `v*` tag is
+  pushed, after checking the tag matches `Cargo.toml`.
+- `deploy/install.sh` finds the Kindle on macOS and Linux, or at the path given in `KINDLE`.
+
 ### Fixed
 - The quick settings panel showed "not charging" while the Kindle was charging. The driver read the
   framework's `isCharging` property first, and its answer 0 ended the search before the charger's own

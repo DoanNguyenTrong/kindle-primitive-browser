@@ -9,5 +9,8 @@ data/
 docs/evidence/
 artifacts/
 
+# Release packages made by scripts/package-release.sh
+dist/
+
 # macOS
 .DS_Store

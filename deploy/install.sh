@@ -1,17 +1,28 @@
 #!/bin/sh
-# Copy Primitive Browser onto a mounted Kindle (USB mass storage, /Volumes/Kindle).
+# Copy Primitive Browser onto a mounted Kindle (USB mass storage).
 #
 #   deploy/install.sh [path/to/kb-kindle-binary]
+#
+# The Kindle is found at $KINDLE if that is set; otherwise at /Volumes/Kindle (macOS),
+# /media/$USER/Kindle or /run/media/$USER/Kindle (Linux).
 #
 # Default binary: target/armv7-unknown-linux-musleabihf/release/kb-kindle
 # (build it with: cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf)
 #
-# Writes only under /Volumes/Kindle/browser and /Volumes/Kindle/documents.
+# Writes only under <Kindle>/browser and <Kindle>/documents.
 # Existing start.txt and data/ (cookies, bookmarks, cache, saved pages) are kept.
 set -eu
 
 HERE=$(cd "$(dirname "$0")/.." && pwd)
-KINDLE=/Volumes/Kindle
+if [ -z "${KINDLE:-}" ]; then
+    for candidate in /Volumes/Kindle "/media/${USER:-}/Kindle" "/run/media/${USER:-}/Kindle"; do
+        if [ -d "$candidate/documents" ]; then
+            KINDLE=$candidate
+            break
+        fi
+    done
+fi
+KINDLE=${KINDLE:-/Volumes/Kindle}
 BIN=${1:-$HERE/target/armv7-unknown-linux-musleabihf/release/kb-kindle}
 # Library launcher name. The launcher was installed as "KB Browser.sh" before the rename.
 LAUNCHER="Primitive Browser.sh"

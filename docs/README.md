@@ -8,6 +8,9 @@
 | [04-roadmap.md](04-roadmap.md) | Product goal, current milestone, acceptance evidence, and the next implementation priorities |
 | [05-ui-ux.md](05-ui-ux.md) | Kindle layout, touch targets, e-ink behavior, and UI review rules |
 | [device-notes.md](device-notes.md) | Recorded device observations about orientation, touch, launcher behavior, and rejected experiments |
+| [INSTALL.md](INSTALL.md) | Installing the release package on a Kindle (no build needed), updating, uninstalling |
+| [VERSIONING.md](VERSIONING.md) | Version numbers, development builds, release tags, and the release steps |
+| [DEVICES.md](DEVICES.md) | Device support matrix, what is hard-coded for the Oasis 3, and the plan for other Kindles |
 | [CHANGELOG.md](CHANGELOG.md) | Version history and known issues |
 
 Start with the [roadmap](04-roadmap.md) for the current goal and next work. Requirements

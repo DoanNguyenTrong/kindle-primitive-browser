@@ -1,105 +1,151 @@
 # Primitive Browser
 
-A web browser for the Kindle Oasis 3.
+[![CI](https://img.shields.io/github/actions/workflow/status/OWNER/REPO/ci.yml?branch=main&label=CI)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/OWNER/REPO?include_prereleases&label=release)](https://github.com/OWNER/REPO/releases)
+[![Tag](https://img.shields.io/github/v/tag/OWNER/REPO?label=tag)](https://github.com/OWNER/REPO/tags)
+[![Stars](https://img.shields.io/github/stars/OWNER/REPO?style=social)](https://github.com/OWNER/REPO/stargazers)
+[![Licence](https://img.shields.io/badge/licence-to%20be%20chosen-lightgrey)](#licence)
 
-A native browser for a jailbroken Kindle Oasis 3 (firmware 5.18.2, KOReader/KPM installed).
-HTML, CSS and a JavaScript subset run on the device; the screen is painted in 8-bit grayscale.
-The Mac builds and tests the program. No computer or rendering server is needed during use.
+> The badges use the placeholders `OWNER/REPO`. Replace them with the GitHub repository once it
+> exists. The CI badge shows the status of the `main` branch.
 
-Released baseline: **0.1.0**. The current **Unreleased navigation milestone** improves reading
-position, tabs, article section links and sheet controls. Desktop and ARMv7 builds pass;
-recorded hardware observations are in [device notes](docs/device-notes.md), while full release
-validation remains pending. See the [goal and roadmap](docs/04-roadmap.md).
+**A native web browser for jailbroken Kindle e-readers, written in Rust.** Pages are laid out by the
+[Blitz](https://github.com/DioxusLabs/blitz) HTML/CSS engine, run a JavaScript subset in QuickJS, and
+are painted in 8-bit grayscale for e-ink. The browser runs on the Kindle itself. No computer or
+rendering server is needed while browsing.
 
-## Current capabilities
+![Home page](docs/images/home.png)
 
-| Area | Scope |
+| Keyboard | Reading view | Quick settings |
+|---|---|---|
+| ![Keyboard](docs/images/keyboard_caret_insert.png) | ![Reading view](docs/images/reading_view.png) | ![Quick settings](docs/images/quick_panel_from_top_edge.png) |
+
+*Screenshots come from the desktop build of the same engine. The quick settings preview shows the
+desktop placeholder values, not a real battery.*
+
+## Status
+
+| Device | Status |
 |---|---|
-| Rendering | Blitz HTML/CSS, including flex/grid; selectable 412/600/800 CSS-px layouts, default 600 |
-| Networking | HTTPS with bundled TLS roots, redirects, six parallel sub-resources, deferred images |
-| Navigation | Links/section links, Back/Forward with absolute scroll restore, one live previous-page cache |
-| Tabs | New/switch/close; per-tab history and positions; inactive documents rebuild from cache; session metadata resumes after restart |
-| Input | Custom keyboard with caret, Shift/symbols and suggestions; basic text-field GET/POST forms |
-| Reading | Heuristic reading view, 80–200% text size, page width, Day/Night, Images switch |
-| Library | Bookmarks with reorder/remove, recent visits, saved HTML, folding Home sections |
-| Storage | HTTP cookies, 200 MiB disk cache with offline fallback, persistent display settings |
-| E-ink and lifecycle | Cached UI layers, partial refresh, pinned sheet headers, launcher restore/watchdog |
+| Kindle Oasis 3 (1264 × 1680, firmware 5.18.2) | Verified on hardware |
+| Other Kindle models | Not supported yet. See [device support](docs/DEVICES.md) for the plan. |
 
-## Compatibility limits
+Current version: **0.1.17** (workspace version, untagged). Versioning and tags are described in
+[versioning](docs/VERSIONING.md). Hardware observations are in [device notes](docs/device-notes.md).
 
-The current runtime is a browser API subset. It does not provide general compatibility with
-modern web apps: no ES modules, XMLHttpRequest, WebSockets, workers, service workers, canvas,
-WebGL, audio or video. `fetch` blocks synchronously underneath its Promise; observers and
-several browser APIs are stubs. Web storage is in-memory. See [requirements](docs/01-requirements.md).
+## Features
 
-Done/Go on a page field immediately submits its form. Multi-field editing, checkbox/radio/
-select controls and complete form event semantics need work. Saved pages contain HTML;
-assets are not bundled. Tab metadata resumes from the last saved session; live DOM edits and
-unsaved progress after a crash are not retained.
-Device speed, memory, touch comfort and panel quality still need measurement.
+| Area | What it does |
+|---|---|
+| Rendering | HTML and CSS with flexbox and grid. Page layout width is selectable: 412, 600 or 800 CSS px (default 600). |
+| Networking | HTTPS with bundled TLS roots, redirects, six parallel sub-resources, images loaded after the text. |
+| Navigation | Links and section links. Back and Forward restore the scroll position. One previous page is kept live for instant Back. |
+| Tabs | New, switch and close. Each tab keeps its own history and scroll position. Tabs resume after a restart. |
+| Input | An on-screen keyboard with caret, Shift, symbols and address suggestions. Basic text-field forms (GET and POST). |
+| Reading | A reading view, text size from 80% to 200%, page width, day and night, and an images switch. |
+| Library | Bookmarks with reorder and remove, recent visits, saved HTML pages, and folding Home sections. |
+| Storage | HTTP cookies, a 200 MiB disk cache with offline fallback, and persistent display settings. |
+| Device | Quick settings from the top edge (frontlight, warmth, battery, Wi-Fi, clock), page-turn buttons, and a launcher that restores the Kindle when the browser exits. |
 
-## Build and install
+## Limits
 
-On macOS, install Rust stable, the `armv7-unknown-linux-musleabihf` target, zig and cargo-zigbuild.
-With the Homebrew Rust installation used for this project:
+The JavaScript runtime is a subset of the browser APIs. There is no ES modules, XMLHttpRequest,
+WebSockets, workers, canvas, WebGL, audio or video, and fetch blocks underneath its Promise. Web
+storage is in-memory. Modern web apps will not work. See [requirements](docs/01-requirements.md).
+
+## Install (no build needed)
+
+Download the release package from the [Releases](https://github.com/OWNER/REPO/releases) page, check
+its checksum, and copy it onto the Kindle over USB. Step-by-step instructions for macOS, Linux and
+Windows are in **[docs/INSTALL.md](docs/INSTALL.md)**.
+
+You need a jailbroken Kindle with FBInk at `/mnt/us/libkh/bin/fbink`. KOReader and KPM provide it.
+
+## Build from source
+
+Requirements: Rust (stable), the `armv7-unknown-linux-musleabihf` target, [zig](https://ziglang.org),
+and [cargo-zigbuild](https://github.com/rust-cross/cargo-zigbuild). The commands below use the
+Homebrew Rust installation on macOS.
 
 ```sh
 export PATH="/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:$PATH"
-cargo build --release --workspace
+cargo build --release --workspace                                      # desktop build and tests
 cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf
-sh deploy/install.sh     # requires Kindle mounted at /Volumes/Kindle
+scripts/package-release.sh                                             # dist/primitive-browser-<version>.zip
 ```
 
-Eject safely and open **Primitive Browser** in the library. `browser/start.txt` sets the start page;
-`browser/data/` stores browsing data; `browser/log-browser.txt` holds the bounded log.
+To install a build directly onto a mounted Kindle, run `sh deploy/install.sh`. To build, bump the
+patch version and install in one step, run `scripts/build-device.sh`. Each such run is a new
+development version (see [versioning](docs/VERSIONING.md)).
 
-The bottom toolbar contains Back, Forward, tabs, bookmark and Menu. Swipe vertically to
-scroll, horizontally for Back/Forward, or along the address bar to switch tabs. Page buttons
-move a screen. Long press a link to open a new tab. Tap above a sheet to dismiss it. Menu
-keeps Exit visible; exiting saves the tabs before returning to the Kindle library. On startup,
-saved tabs take priority over `start.txt`, which is the fallback for a new session.
+## Using the browser
 
-The launcher keeps the Kindle framework running and hides its status bar while browsing.
-Exit restores the status bar and opens the library. If that mode leaves a blank library,
-create `/mnt/us/browser/stop-framework` to use the older stop/restart fallback.
+- **Bars.** The address bar is at the top. Tap it to type, or to select the current address. The toolbar
+  at the bottom has Back, Forward, tabs, bookmark and Menu.
+- **Scrolling.** Swipe vertically to scroll. Swipe horizontally for Back and Forward. Swipe along the
+  address bar to switch tabs. The page-turn buttons move one screen.
+- **Quick settings.** Swipe down from the top edge.
+- **Links.** Long-press a link to open it in a new tab.
+- **Menu.** Reload, reading view, Display, Images, bookmarks, saved pages, Home, New tab, Clear cache,
+  Clear history and **Exit**.
+- **Exit.** Saves the tabs, restores the Kindle's status bar and opens the library.
+- **Start page.** A new session opens `browser/start.txt`. Saved tabs take priority.
+- **Fallback.** If the library shows a blank screen after Exit, create an empty file named
+  `stop-framework` in the `browser` folder on the Kindle. The launcher then stops and restarts the
+  framework instead.
 
-## Develop and test
+Data lives in `browser/data/`, the log in `browser/log-browser.txt`.
+
+## Testing and CI
 
 ```sh
-cargo test --workspace --exclude kb-kindle
+cargo test --workspace                       # unit tests, including device-driver logic
 cargo build --release -p kb-desktop
-scripts/desktop-regression.sh       # 67 local scenarios with screenshots; --network adds two live-site checks
-scripts/test-all.sh                 # every check, with evidence kept in artifacts/ (see REPORT.md)
-scripts/launcher-stub-test.sh       # ten launcher checks with stubs
+scripts/desktop-regression.sh                # 67 desktop scenarios with screenshots (--network adds live sites)
+scripts/launcher-stub-test.sh                # 10 launcher checks with stub commands
+scripts/test-all.sh                          # every check, with evidence in artifacts/REPORT.md
 ```
 
-Drive the same engine on the Mac and inspect the frame PNG:
+The GitHub Actions workflow in `.github/workflows/ci.yml` runs the unit tests, the launcher checks, the
+desktop regression and the ARMv7 build on every push and pull request. The release workflow in
+`.github/workflows/release.yml` builds and publishes the package when a `v*` tag is pushed.
 
-```sh
-KB_FONTS=$(ls assets/fonts/*.ttf | paste -sd, -) KB_DATA=$(mktemp -d) \
-  KB_OUT=frame.png target/release/kb-desktop kbp://home
-# open <url|text> | tap x y | scroll dy | page ±1 | back | fwd | reload
-# action menu | action tabs | tapsel <selector> | tapkey <char> | quit
-```
+Desktop results are not hardware results. Hardware checks are listed in
+[test and validation](docs/03-test-and-validation.md).
 
-Use a fresh `KB_DATA` to isolate tests. The driver also supports assertions for URL, title,
-scroll range, tab count, navigation availability and visible controls. Full commands and
-hardware release checks are in [test and validation](docs/03-test-and-validation.md).
-
-## Project layout
+## Project structure
 
 ```text
-crates/kb-net       HTTP, cookie jar, disk cache, blocking, resource loading
-crates/kb-engine    HTML/CSS layout, scripts, grayscale paint, hit testing, forms, reader
-crates/kb-js        QuickJS + native DOM bridge and browser-side prelude
-crates/kb-app       Browser state, tabs, history, storage, shared UI and keyboard
-crates/kb-desktop   Stdin/PNG driver for local testing
-crates/kb-kindle    evdev touch/page buttons and FBInk display
-scripts/           Desktop regression and launcher checks
-deploy/            Device launcher, installer and probes
-vendor/            QuickJS bindings patch for ARMv7 musl
+crates/kb-net       HTTP, cookies, disk cache, blocking, resource loading
+crates/kb-engine    HTML/CSS layout (Blitz), scripts, grayscale paint, hit testing, forms, reader view
+crates/kb-js        QuickJS and the native DOM bridge, with the browser-side prelude
+crates/kb-app       Browser state, tabs, history, storage, shared UI, keyboard, quick settings
+crates/kb-desktop   Stdin-driven desktop driver that writes PNG frames (testing)
+crates/kb-kindle    Device driver: touch and page buttons (evdev), FBInk display, device controls
+deploy/             Device launcher (Browser.sh), installer (install.sh)
+scripts/            Build, package, test and CI helpers
+tests/fixtures/     Local test pages and fixture server
+assets/             Fonts and icons
+vendor/             Patched rquickjs-sys and blitz-dom sources for the ARMv7 build
+docs/               Requirements, architecture, test plan, roadmap, UI guide, device notes, install guide
+spike/              Early experiments (not part of the build)
 ```
 
-Start with the [documentation index](docs/README.md), [roadmap](docs/04-roadmap.md) and
-[UI/UX guide](docs/05-ui-ux.md). The [changelog](docs/CHANGELOG.md) separates released history
-from current implementation; device evidence is kept distinct from desktop results.
+## Documentation
+
+- [Install on a Kindle](docs/INSTALL.md)
+- [Versioning and releases](docs/VERSIONING.md)
+- [Device support and the plan for other Kindles](docs/DEVICES.md)
+- [Device notes from hardware testing](docs/device-notes.md)
+- [Requirements](docs/01-requirements.md) · [Architecture](docs/02-architecture.md) ·
+  [Test and validation](docs/03-test-and-validation.md) · [Roadmap](docs/04-roadmap.md) ·
+  [UI and UX](docs/05-ui-ux.md)
+- [Changelog](docs/CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
+
+## Licence
+
+No licence has been chosen yet. Until one is added, all rights are reserved by the author.
+
+## Security
+
+Report security problems privately to the maintainer rather than in a public issue.
