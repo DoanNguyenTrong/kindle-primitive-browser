@@ -41,6 +41,49 @@ rendering server while you browse.
 <sub>Screenshots are from the desktop build of the same engine. The quick settings preview shows
 placeholder values, not a real battery.</sub>
 
+## Why this exists
+
+The built-in browser on Kindle e-readers is the only browser most readers can reach on the device,
+and it struggles with the web of today.
+
+**The problem with the built-in browser**
+
+- **Old engine.** It is built on WebKit code from about 2009. A [2015 Paperwhite guide](https://thorgalle.me/notes/documentation-for-the-kindle-browser)
+  says the browser was already old when it was released.
+- **Limited JavaScript.** "Generally, only a subset of features from ES5 are supported." Promises, arrow
+  functions, `let` and `const`, classes and `for...of` are missing unless a site is transpiled
+  ([source](https://thorgalle.me/notes/documentation-for-the-kindle-browser)).
+- **Missing layout tools.** Flexbox and grid do not work, and `position: sticky` and `position: fixed`
+  act as static ([source](https://thorgalle.me/notes/documentation-for-the-kindle-browser)).
+- **Wrong viewport.** The viewport reports 1072 px wide, so most sites show as tiny desktop pages that
+  must be zoomed and panned to read ([source](https://thorgalle.me/notes/documentation-for-the-kindle-browser)).
+- **Slow and fragile.** Pages load slowly, and "too much media content or JS may freeze the browser"
+  ([source](https://thorgalle.me/notes/documentation-for-the-kindle-browser)).
+- **Fixes belong to site owners.** The documented fixes are transpiling to ES5 and adding polyfills.
+  A reader cannot do that for the sites they visit.
+- **Older devices are weaker.** The notes above are from a 2015 model. Community reports describe the
+  built-in browser as limited ES5 with no access to device storage
+  ([kindle-web-tools](https://github.com/martin-at-ipal/kindle-web-tools)). Older models are expected
+  to be weaker still. This project has not measured them yet.
+
+**Newer firmware helps, but reports differ.** Amazon has updated the browser on newer firmware, and
+some modern pages now load ([Liliputing](https://liliputing.com/amazons-kindle-web-browser-is-actually-usable-now/)).
+The reports disagree on how far this goes. The browser still warns about limited memory and is aimed
+at simple sites.
+
+**What this project does instead.** It runs on the Kindle itself, with a modern layout engine
+(flexbox and grid), a real JavaScript engine (QuickJS), a working `fetch`, HTTPS, cookies, a disk
+cache, tabs and a reading view. There is no computer, server or thin client in the loop. It is still
+limited, and [Limits](#limits) says what does not work yet.
+
+**Motivation.** The stock browser cannot run most modern sites, and the usual fixes need a computer or
+a server. This project builds a browser that runs entirely on the device.
+
+<sub>Sources: [thorgalle, Paperwhite 3 browser documentation](https://thorgalle.me/notes/documentation-for-the-kindle-browser),
+[kindle-web-tools](https://github.com/martin-at-ipal/kindle-web-tools),
+[Liliputing](https://liliputing.com/amazons-kindle-web-browser-is-actually-usable-now/).
+Community reports vary by model and firmware. Amazon publishes no official list of the browser's limits.</sub>
+
 ## Quick start
 
 1. **Download** `primitive-browser-<version>.zip` from the [latest release](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases/latest).
