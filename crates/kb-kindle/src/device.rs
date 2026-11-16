@@ -12,6 +12,8 @@ const WIFID: &str = "com.lab126.wifid";
 const CMD: &str = "com.lab126.cmd";
 const BATTERY_SYSFS: &str = "/sys/class/power_supply/max77796-battery/capacity";
 const CHARGING_SYSFS: &str = "/sys/class/power_supply/max77796-charger/charging";
+const CHARGER_STATUS_SYSFS: &str = "/sys/class/power_supply/max77796-charger/status";
+const CHARGER_ONLINE_SYSFS: &str = "/sys/class/power_supply/max77796-charger/online";
 
 /// Reads and sets the Kindle's frontlight, warmth, battery, Wi-Fi and clock.
 pub struct KindleDevice;
@@ -68,11 +70,50 @@ fn local_time() -> (String, String) {
     }
 }
 
-/// Whether the charger is connected: the property bus first, the charger's own flag otherwise.
-fn charging() -> bool {
-    get_int(POWERD, "isCharging")
-        .or_else(|| std::fs::read_to_string(CHARGING_SYSFS).ok()?.trim().parse().ok())
-        .map_or(false, |v| v != 0)
+/// The charger's own flag from sysfs (1 while charging), or None when it cannot be read.
+fn charging_flag() -> Option<u32> {
+    std::fs::read_to_string(CHARGING_SYSFS).ok()?.trim().parse().ok()
+}
+
+/// A sysfs node's text, trimmed (empty when it cannot be read).
+fn sysfs_text(path: &str) -> String {
+    std::fs::read_to_string(path).map(|t| t.trim().to_string()).unwrap_or_default()
+}
+
+/// Whether the charger is connected. Any of three sources counts: the property bus, the charger's flag,
+/// and the charger's status text (KOReader reads the status file on this model). Each one can answer 0
+/// while another says charging, so none of them ends the search alone. The raw values are returned for
+/// the log.
+fn charging() -> (bool, Option<u32>, Option<u32>, String) {
+    let bus = get_int(POWERD, "isCharging");
+    let flag = charging_flag();
+    let status = sysfs_text(CHARGER_STATUS_SYSFS);
+    let on = bus == Some(1) || flag == Some(1) || status == "Charging";
+    (on, bus, flag, status)
+}
+
+/// Every power supply the kernel exposes, with its type, status, online and present values, for the log.
+/// The status bar's bolt follows whichever one reports the cable, so this shows which one that is.
+fn power_supplies() -> String {
+    let Ok(dir) = std::fs::read_dir("/sys/class/power_supply") else {
+        return "unreadable".to_string();
+    };
+    let mut names: Vec<String> = dir.flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    names
+        .iter()
+        .map(|name| {
+            let base = format!("/sys/class/power_supply/{name}");
+            format!(
+                "{name}[type={} status={} online={} present={}]",
+                sysfs_text(&format!("{base}/type")),
+                sysfs_text(&format!("{base}/status")),
+                sysfs_text(&format!("{base}/online")),
+                sysfs_text(&format!("{base}/present")),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Battery level from the property bus, or from the battery's sysfs node if the bus has none.
@@ -103,9 +144,13 @@ impl DeviceControl for KindleDevice {
         let wifi_on = get_int(WIFID, "enable").map_or(false, |v| v != 0);
         let wifi_state = get_text(WIFID, "cmState");
         let battery = battery_level();
-        let charging = charging();
+        let (charging, bus, flag, status) = charging();
+        eprintln!("[device] power supplies: {}", power_supplies());
         // Written to the launcher log, so the values the panel shows can be checked on the device.
-        eprintln!("[device] battery {battery:?} charging {charging} wifi {wifi_on} state {wifi_state:?}");
+        eprintln!(
+            "[device] battery {battery:?} charging {charging} (bus {bus:?}, flag {flag:?}, status {status:?}, online {:?}) wifi {wifi_on} state {wifi_state:?}",
+            sysfs_text(CHARGER_ONLINE_SYSFS)
+        );
         DeviceStatus {
             brightness: get_int(POWERD, "flIntensity").unwrap_or(0).min(LEVEL_MAX),
             warmth: get_int(POWERD, "currentAmberLevel").unwrap_or(0).min(LEVEL_MAX),

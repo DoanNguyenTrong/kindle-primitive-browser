@@ -3,9 +3,17 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.14`.
+workspace version is `0.1.17`.
 
 ## [Unreleased]
+
+### Fixed
+- The quick settings panel showed "not charging" while the Kindle was charging. The driver read the
+  framework's `isCharging` property first, and its answer 0 ended the search before the charger's own
+  flag was read. It now checks the property, charger flag and charger status: either integer value 1
+  or status `Charging` reports charging. The log records the raw values and charger online state,
+  plus a sorted inventory of the kernel power supplies with their type, status, online and present
+  values for diagnosis.
 
 ### Added
 - Touch and the page-turn buttons follow the orientation the framework shows (its accelerometer
@@ -34,8 +42,8 @@ workspace version is `0.1.14`.
   button (slashed when off) and the battery: a battery drawn to the charge level in black, with the
   charge number split at the level's edge (white over the black part, black over the white part),
   and a bolt beside the number while charging. The
-  charging state comes from the Kindle's `isCharging` property, with the charger's sysfs flag as
-  fallback; the launcher log records the battery and charging values each time the panel opens.
+  charging state combines the Kindle's `isCharging` property, charger sysfs flag and status text;
+  the launcher log records the battery, charging result and raw inputs each time the panel opens.
 - Sessions: the open tabs, each tab's history and scroll positions, and the active tab are saved
   whenever a page loads or a tab closes, and when the browser leaves. The next time it opens
   (from the Kindle library or after a crash), the same tabs come back.
