@@ -1,0 +1,26 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Navigation fixture</title>
+<style>
+body{margin:0;font:24px sans-serif}nav{padding:20px}a,button{display:block;margin:16px 0;padding:12px}
+.spacer{height:1400px}h2{margin:0;height:100px}#wide{display:none}
+@media(min-width:700px){#wide{display:block}}
+</style></head><body>
+<nav><button id="edit">Remember this document</button><p id="state">original</p>
+<p id="viewport"></p><p id="wide">Wide layout</p>
+<a id="section-link" href="#ch%C6%B0%C6%A1ng+2:reading">Chapter two</a>
+<a id="missing-link" href="#missing">Missing section</a>
+<a id="top-link" href="#">Top</a>
+<button id="read-href">Read location</button><p id="href">unset</p></nav>
+<div class="spacer"></div><h2 id="chương+2:reading">Chapter two</h2>
+<a name="legacy"></a><div class="spacer"></div><div class="spacer"></div>
+<script>
+document.getElementById('edit').addEventListener('click', function(e) {
+  e.preventDefault();
+  document.getElementById('state').textContent = 'remembered';
+});
+document.getElementById('read-href').addEventListener('click', function(e) {
+  e.preventDefault();
+  document.getElementById('href').textContent = location.href;
+});
+document.getElementById('viewport').textContent ='width=' + innerWidth + ';wide=' + matchMedia('(min-width:700px)').matches;
+</script></body></html>

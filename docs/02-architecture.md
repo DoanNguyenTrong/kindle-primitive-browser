@@ -1,6 +1,6 @@
 # 2. System architecture
 
-Version 0.1.0. This describes the code as committed. Requirements it serves are in
+Released baseline 0.1.0, including the Unreleased navigation milestone. This describes the working tree. Requirements it serves are in
 [01-requirements.md](01-requirements.md).
 
 ## 2.1 Overview
@@ -98,8 +98,8 @@ Fonts for the computer build are copied into `assets/fonts/` (Noto, OFL; licence
 
 Frame path: state change → `Browser::frame()` → cached layers composed into one buffer →
 `Update` (the buffer plus the changed rows and a waveform) → the driver crops the rows,
-encodes PNG, and calls FBInk with the waveform (`DU` for chrome and keyboard, `GL16` for
-page content, `GC16` every eighth text update to clear ghosting).
+encodes PNG, and calls FBInk with the waveform (`DU` for short keyboard/progress feedback, `GL16` for
+pages, bars and sheets, `GC16` every eighth text update to clear ghosting).
 
 ## 2.5 Vendored code and patches
 
@@ -115,12 +115,16 @@ page content, `GC16` every eighth text update to clear ghosting).
 All screens drawn by the browser itself use one stylesheet built from constants:
 
 - Bars: address bar 96 px (pill 68 px), bottom toolbar 104 px with five equal cells.
-- Sheets (menu, tabs): 780 px, a 72 px title, rows of 96 px, 1 px dividers.
+- Sheets (menu, tabs, display): 780 px; a separate pinned 72 px header and a 708 px
+  scrolling body. Painting, hit testing, and selector lookup use the same offsets. Done
+  stays in the header; Menu also has Exit. Rows are at least 96 px.
 - Side margin 20 px on bars and sheets, 24 px on pages; 8 px spacing unit.
 - Keyboard: keys at the bottom 730 px of the screen (`KB_Y` = 950).
 
 Internal pages and chrome are HTML rendered by the same engine, at scale 1. Web pages are
-laid out at 412 CSS px and scaled to the panel (`WEB_CSS_WIDTH`).
+laid out at the selected width (412/600/800 CSS px, default 600) and scaled to the panel
+(`PAGE_WIDTHS`, `settings.page_width`). QuickJS receives that width, the scaled height, and
+the same device pixel ratio; basic JS width queries agree with the renderer.
 
 ## 2.7 Storage layout
 
@@ -133,7 +137,7 @@ Root: `$KB_DATA` on the computer, `/mnt/us/browser/data` on the device.
 | `bookmarks.tsv` | URL and title per line | on bookmark change |
 | `history.tsv` | Up to 300 visited pages, newest first | after each web load |
 | `saved.tsv` and `saved/<key>.html` | Offline copies and their index | on Save |
-| `settings.tsv` | Text size and night mode | on change |
+| `settings.tsv` | Text size, page width, night mode, Images, folded Home sections | on change |
 | `defaults_v2` | Marker: default bookmarks already added | once |
 
 Device-only files in `/mnt/us/browser/`: `kb-kindle` (binary), `start.txt` (start page),
@@ -177,4 +181,33 @@ confirmed on the device (see the validation document).
 - Scripts run synchronously on the main thread. A script that fetches a script file blocks
   until that file arrives.
 - The one-page cache keeps a whole live page (DOM and JavaScript heap, up to 48 MB) for
-  instant Back. Memory use is therefore two pages at most.
+  instant Back. This is two live content pages in steady state, plus cached chrome pages.
+  Building a replacement can transiently allocate another document; resources, fonts and
+  paint buffers also contribute to RSS. The device budget still needs measurement.
+
+
+## 2.11 Navigation and page ownership
+
+The active tab owns the current document. Inactive `TabSave` entries contain URL, title,
+history index, URLs and absolute device-pixel scroll positions. Switching tabs discards live
+content/cache from the previous tab, rebuilds the target using disk-cache policy, and restores
+its absolute position. Creating a tab stashes the old navigation state once. Closing the last
+tab resets its history to Home; closing cards keeps the tab switcher open.
+
+`PreviousPage` bundles a live document with its URL, original HTML, optional reader HTML and
+rendering mode. A cache restore swaps that complete state with the current page. Back/Forward
+use `Page::scroll_to`, never add a saved offset to an already-scrolled document. Display/image
+reflow invalidates the previous layout. The original document source remains available while
+reading view renders its own HTML, so Save and subsequent reflow use the matching material.
+
+A URL with the same HTTP(S) origin, path and query is eligible for fragment navigation.
+The browser records the new history entry, updates location reads, and jumps in the existing
+DOM. IDs are compared as attributes after percent decoding, without interpolating fragment
+text into a selector; legacy named anchors and empty/top fragments are supported. Unknown
+fragments preserve position. Full loads retain the requested fragment if the response URI
+omits it. History traversal restores the recorded position instead of recomputing the jump.
+Hashchange/popstate dispatch and script-driven location navigation are not implemented.
+
+Persistence is separate: tab sessions are in-memory; settings/bookmark/history/saved writes
+are best-effort. Atomic writes, surfaced storage failures, complete offline archives and
+restart restoration are future work in the roadmap.

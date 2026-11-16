@@ -62,13 +62,26 @@ check "$(test -f "$T/dir/framework-stopped" && echo yes || echo no)" "no" "marke
 echo "== 3. marker left by an earlier run"
 rm -f "$CALLS"
 touch "$T/dir/framework-stopped"
+# Run in the background and wait at most 30 s, so a launcher that hangs fails the test
+# instead of blocking it.
 (cd "$T/dir" && PATH="$T/bin:$PATH" KB_DIR="$T/dir" sh launcher.sh) &
 LP=$!
-sleep 1
-kill -9 "$LP" 2>/dev/null
-sleep 6
+waited=0
+while kill -0 "$LP" 2>/dev/null && [ "$waited" -lt 30 ]; do
+    sleep 1
+    waited=$((waited + 1))
+done
+if kill -0 "$LP" 2>/dev/null; then
+    kill -9 "$LP" 2>/dev/null
+    wait "$LP" 2>/dev/null
+    check "hung" "exited" "launcher exits within 30 s"
+else
+    wait "$LP" 2>/dev/null
+    check "exited" "exited" "launcher exits within 30 s"
+fi
 first=$(head -n 1 "$CALLS")
 check "$first" "start lab126_gui" "stale marker restores the UI before stopping it again"
+check "$(test -f "$T/dir/framework-stopped" && echo yes || echo no)" "no" "stale marker cleared after recovered run"
 
 rm -rf "$T"
 if [ $fail -eq 0 ]; then

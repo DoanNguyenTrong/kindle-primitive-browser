@@ -47,7 +47,7 @@ pub type HttpGet = Rc<dyn Fn(&str) -> Option<Vec<String>>>;
 
 impl Js {
     /// Create a script engine for `doc`, with `url` as the page location.
-    pub fn new(doc: Doc, url: &str, http: HttpGet) -> Result<Js, String> {
+    pub fn new(doc: Doc, url: &str, http: HttpGet, width: f32, height: f32, scale: f32) -> Result<Js, String> {
         let rt = Runtime::new().map_err(|e| e.to_string())?;
         rt.set_memory_limit(MEMORY_LIMIT);
         let deadline = Rc::new(Cell::new(Instant::now() + SLICE));
@@ -58,7 +58,9 @@ impl Js {
         ctx.with(|ctx| -> rquickjs::Result<()> {
             install_natives(&ctx, doc, http)?;
             ctx.globals().set("__kbUrl", url)?;
-            ctx.globals().set("__kbCssWidth", 412)?;
+            ctx.globals().set("__kbCssWidth", width)?;
+            ctx.globals().set("__kbCssHeight", height)?;
+            ctx.globals().set("__kbDevicePixelRatio", scale)?;
             ctx.eval_with_options::<(), _>(PRELUDE, sloppy("prelude"))?;
             Ok(())
         })
@@ -87,6 +89,21 @@ impl Js {
             }
         });
         self.drain_jobs();
+    }
+
+    /// Keep location reads consistent after the browser follows a fragment link.
+    pub fn set_location(&self, url: &str) {
+        self.deadline.set(Instant::now() + SLICE);
+        self.ctx.with(|ctx| {
+            let result = (|| -> rquickjs::Result<()> {
+                let kb: Object = ctx.globals().get("__kb")?;
+                let update: Function = kb.get("setLocation")?;
+                update.call((url,))
+            })();
+            if let Err(e) = result {
+                report(&ctx, "location", &e.to_string());
+            }
+        });
     }
 
     /// Dispatch a click at `node` through its ancestors.

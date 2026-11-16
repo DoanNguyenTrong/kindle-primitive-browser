@@ -23,6 +23,7 @@ FONTS=$(ls "$ROOT"/assets/fonts/*.ttf | paste -sd, -)
 BASE=http://127.0.0.1:$PORT
 NETWORK=0
 [ "${1:-}" = "--network" ] && NETWORK=1
+mkdir -p "$OUT" || exit 2
 
 [ -x "$BIN" ] || { echo "missing binary: $BIN (build with: cargo build --release -p kb-desktop)"; exit 2; }
 
@@ -110,15 +111,15 @@ tapsel a[href=\"kb:go\"]
 text p
 quit" "received | $BASE/submit" "POST city=hi"
 
-run keyboard_caret_insert "open kbp://home
-action addr
+run keyboard_caret_insert "open $BASE/form.html
+tapsel input[name=q]
 tapkey a
 tapkey b
 tapkey c
 tapsel a[href=\"kb:left\"]
 tapkey x
 tapsel a[href=\"kb:go\"]
-quit" "q=abxc"
+quit" "$BASE/search?q=abxc"
 
 # --- DOM and JavaScript APIs ------------------------------------------------------
 run dom_apis "open $BASE/dom.html
@@ -138,7 +139,10 @@ quit" "[count] h1: 1"
 run save_offline_and_reopen "open $BASE/article.html
 action save
 action saved
-quit" "Saved pages"
+tapsel a[href^=\"kbp://saved/\"]
+assert title Test article
+text h1
+quit" "[text] h1: Test article"
 
 run bookmark_add_and_list "open $BASE/plain.html
 action mark
@@ -185,8 +189,7 @@ action nighton
 action nightoff
 quit" "[ui] action kb:display" "[ui] action kb:font:+" "[ui] action kb:width:800" "[ui] action kb:nightoff"
 
-# Menu taps go through the sheet hit test. Row y positions are device pixels for the 1264x1680 screen:
-# reload 1100, reader 1200, text size 1300, night 1400, bookmark 1500, save 1600; Exit button in title (1200, 936).
+# Menu taps go through the sheet hit test in device pixels on the 1264x1680 screen.
 run menu_toggle_keeps_sheet "open kbp://home
 action menu
 tap 300 1460
@@ -215,10 +218,146 @@ quit" "[ui] action kb:reload (sheet=None"
 
 run menu_exit_button "open kbp://home
 action menu
-tap 1200 936" "exit requested"
+tapsel a[href=\"kb:exit\"]" "exit requested"
 
 run address_bar_hint_on_home "open kbp://home
 quit" "Home | kbp://home"
+
+# --- dependable reading and navigation milestone ---------------------------------
+run history_restores_absolute_scroll "open $BASE/navigation.html
+scroll 500
+open $BASE/article.html
+scroll 700
+back
+assert scroll 500 500
+fwd
+assert scroll 700 700
+back
+assert scroll 500 500
+quit" "[assert] scroll 500 500: PASS" "[assert] scroll 700 700: PASS"
+
+run tabs_preserve_history_and_scroll "open $BASE/navigation.html
+scroll 500
+open $BASE/article.html
+scroll 700
+action newtab
+assert back false
+open $BASE/plain.html
+tabstep -1
+assert url $BASE/article.html
+assert scroll 700 700
+assert back true
+back
+assert url $BASE/navigation.html
+assert scroll 500 500
+fwd
+assert scroll 700 700
+quit" "[assert] scroll 500 500: PASS"
+
+run close_active_and_last_tab "open $BASE/navigation.html
+action newtab
+open $BASE/plain.html
+action tabs
+tapsel a[href=\"kb:closetab:1\"]
+assert tabs 1
+assert url $BASE/navigation.html
+assert visible a[href=\"kb:closemenu\"]
+tapsel a[href=\"kb:closetab:0\"]
+assert tabs 1
+assert url kbp://home
+assert back false
+assert visible a[href=\"kb:closemenu\"]
+quit" "[assert] url kbp://home: PASS"
+
+run cached_source_matches_document "open $BASE/navigation.html
+open $BASE/article.html
+back
+action width:800
+assert title Navigation fixture
+text #viewport
+quit" "[text] #viewport: width=800;wide=true"
+
+run reader_survives_back_and_reflow "open $BASE/article.html
+action reader
+open $BASE/plain.html
+back
+action font:+
+count nav
+text h1
+action reader
+count nav
+quit" "[count] nav: 0" "[count] nav: 1" "[text] h1: Test article"
+
+run cached_layout_uses_current_settings "open $BASE/navigation.html
+text #viewport
+open $BASE/article.html
+action width:800
+back
+text #viewport
+visible #wide
+quit" "[text] #viewport: width=600;wide=false" "[text] #viewport: width=800;wide=true" "[visible] #wide: 1"
+
+run fragment_preserves_dom_and_history "open $BASE/navigation.html
+tapsel #edit
+tapsel #section-link
+assert url $BASE/navigation.html#ch%C6%B0%C6%A1ng+2:reading
+assert scroll 2000 6000
+text #state
+back
+assert scroll 0 0
+fwd
+assert scroll 2000 6000
+text #state
+quit" "[text] #state: remembered"
+
+# A fragment jump must update location.href as well as location.hash (the prelude copies the
+# location fields; href is a getter and needs an explicit copy).
+run fragment_updates_location_href "open $BASE/navigation.html
+tapsel a[href^=\"#ch\"]
+tapsel #read-href
+text #href
+quit" "[text] #href: $BASE/navigation.html#ch%C6%B0%C6%A1ng+2:reading"
+
+run initial_fragment_and_named_anchor "open $BASE/navigation.html#legacy
+assert url $BASE/navigation.html#legacy
+assert scroll 2000 6000
+open $BASE/navigation.html#
+assert scroll 0 0
+quit" "[assert] scroll 0 0: PASS"
+
+run missing_fragment_keeps_position "open $BASE/navigation.html
+scroll 500
+open $BASE/navigation.html#missing
+assert scroll 500 500
+quit" "[assert] scroll 500 500: PASS"
+
+run query_change_loads_new_document "open $BASE/navigation.html
+tapsel #edit
+open $BASE/navigation.html?edition=2#legacy
+text #state
+assert scroll 2000 6000
+quit" "[text] #state: original"
+
+run menu_controls_stay_visible "open kbp://home
+action menu
+scroll 1500
+assert visible a[href=\"kb:exit\"]
+assert visible a[href=\"kb:closemenu\"]
+tapsel a[href=\"kb:exit\"]" "exit requested"
+
+run tab_controls_stay_visible "open kbp://home
+action newtab
+action newtab
+action newtab
+action newtab
+action newtab
+action tabs
+scroll 900
+assert visible a[href=\"kb:closemenu\"]
+tapsel a[href=\"kb:closemenu\"]
+action menu
+assert visible a[href=\"kb:exit\"]
+quit" "[assert] visible a[href=\"kb:exit\"]: PASS"
 
 # --- live sites (opt-in) ----------------------------------------------------------
 if [ $NETWORK -eq 1 ]; then

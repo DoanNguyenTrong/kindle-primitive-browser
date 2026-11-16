@@ -1069,6 +1069,7 @@ dependencies = [
  "kb-js",
  "kb-net",
  "parley",
+ "percent-encoding",
  "url",
 ]
 

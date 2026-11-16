@@ -1,102 +1,95 @@
 # Kindle Oasis 3 browser
 
-A native web browser that runs on a jailbroken Kindle Oasis 3 (firmware 5.18.2 with
-KOReader installed). Pages are rendered on the device, with real CSS and JavaScript,
-and the result is shown in 8-bit grayscale for e-ink.
+A native browser for a jailbroken Kindle Oasis 3 (firmware 5.18.2, KOReader/KPM installed).
+HTML, CSS and a JavaScript subset run on the device; the screen is painted in 8-bit grayscale.
+The Mac builds and tests the program. No computer or rendering server is needed during use.
 
-Nothing runs on the Mac at use time. The Mac only builds the program and copies it over USB.
+Released baseline: **0.1.0**. The current **Unreleased navigation milestone** improves reading
+position, tabs, article section links and sheet controls. Desktop and ARMv7 builds pass;
+current device validation is pending. See the [goal and roadmap](docs/04-roadmap.md).
 
-## What works
+## Current capabilities
 
-| Area | Status |
+| Area | Scope |
 |---|---|
-| Page rendering | HTML and CSS via Blitz (Stylo, Taffy), including flex and grid |
-| Networking | HTTPS (rustls with bundled roots), redirects, parallel sub-resources |
-| Navigation | Links, back/forward, reload, scroll position restored per history entry |
-| Address entry | On-screen keyboard rendered by the browser itself |
-| JavaScript | QuickJS with a DOM subset (see below); classic scripts only |
-| Cookies | Persistent jar in `data/cookies.json` |
-| Cache | Disk cache, 200 MB cap, oldest evicted first; back/forward use cached copies up to 7 days old; offline fallback |
-| Bookmarks | Mark/unmark toolbar button, Marks page |
-| Reader mode | "Read" rebuilds the article as clean serif text (heuristic) |
-| Offline | "Save" keeps a copy; Saved page lists and opens it |
-| Ads and trackers | Sub-resources from a built-in list of ad and tracker hosts are not fetched |
-| Lifecycle | Stops the Kindle UI while running, restores it on exit, restarts the browser up to 3 times after a crash |
+| Rendering | Blitz HTML/CSS, including flex/grid; selectable 412/600/800 CSS-px layouts, default 600 |
+| Networking | HTTPS with bundled TLS roots, redirects, six parallel sub-resources, deferred images |
+| Navigation | Links/section links, Back/Forward with absolute scroll restore, one live previous-page cache |
+| Tabs | New/switch/close; per-tab history and positions; inactive documents rebuild from cache |
+| Input | Custom keyboard with caret, Shift/symbols and suggestions; basic text-field GET/POST forms |
+| Reading | Heuristic reading view, 80–200% text size, page width, Day/Night, Images switch |
+| Library | Bookmarks with reorder/remove, recent visits, saved HTML, folding Home sections |
+| Storage | HTTP cookies, 200 MiB disk cache with offline fallback, persistent display settings |
+| E-ink and lifecycle | Cached UI layers, partial refresh, pinned sheet headers, launcher restore/watchdog |
 
-## What doesn't work
+## Compatibility limits
 
-- ES modules (`<script type="module">`) are skipped. There is no module loader.
-- `innerHTML` reads return text only (no serialisation).
-- No `XMLHttpRequest`, WebSockets, `document.write`, or service workers.
-- `fetch` is synchronous under a Promise, so a slow request blocks the page.
-- Form fields can't be typed into yet (no text input on pages), so login forms won't work.
-- Sites that need JavaScript to render their content (many news and app-like sites)
-  show whatever the scripts managed to build in a few seconds, which can be little.
-- No video, no WebGL, no canvas, no CSS animations.
+The current runtime is a browser API subset. It does not provide general compatibility with
+modern web apps: no ES modules, XMLHttpRequest, WebSockets, workers, service workers, canvas,
+WebGL, audio or video. `fetch` blocks synchronously underneath its Promise; observers and
+several browser APIs are stubs. Web storage is in-memory. See [requirements](docs/01-requirements.md).
 
-## Layout
-
-```
-crates/kb-net       HTTP(S), cookies, cache, tracker blocklist, sub-resource loader
-crates/kb-engine    Blitz page: parse, scripts, layout, paint to gray, links, reader mode
-crates/kb-js        QuickJS + DOM bindings (native ops + prelude.js)
-crates/kb-app       Browser state: history, bookmarks, saved pages, toolbar, keyboard
-crates/kb-desktop   Mac driver (stdin commands, writes PNG) for testing
-crates/kb-kindle    Kindle driver (evdev touch and page buttons, FBInk display)
-deploy/Browser.sh   Library launcher (framework stop/restore, crash watchdog)
-deploy/install.sh   Copies the binary and launcher onto a mounted Kindle
-vendor/             rquickjs-sys with musl bindings (see vendor/README.md)
-assets/fonts/       Noto fonts for Mac test runs (SIL OFL, see NOTO-LICENSE.txt)
-```
+Done/Go on a page field immediately submits its form. Multi-field editing, checkbox/radio/
+select controls and complete form event semantics need work. Saved pages contain HTML;
+assets are not bundled. Tabs and live DOM edits are not restored across process restarts.
+Device speed, memory, touch comfort and panel quality still need measurement.
 
 ## Build and install
 
-Requirements on the Mac: Rust (stable) with the `armv7-unknown-linux-musleabihf`
-target, `zig` and `cargo-zigbuild` (all installable with Homebrew).
+On macOS, install Rust stable, the `armv7-unknown-linux-musleabihf` target, zig and cargo-zigbuild.
+With the Homebrew Rust installation used for this project:
 
 ```sh
-export PATH="/opt/homebrew/opt/rustup/bin:$PATH"
+export PATH="/opt/homebrew/opt/rustup/bin:/opt/homebrew/bin:$PATH"
+cargo build --release --workspace
 cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf
-sh deploy/install.sh          # Kindle mounted at /Volumes/Kindle
+sh deploy/install.sh     # requires Kindle mounted at /Volumes/Kindle
 ```
 
-Then eject the Kindle safely and open **KB Browser** from the library.
+Eject safely and open **KB Browser** in the library. `browser/start.txt` sets the start page;
+`browser/data/` stores browsing data; `browser/log-browser.txt` holds the bounded log.
 
-On the Kindle:
-- `browser/start.txt` sets the start page (default: Hacker News).
-- `browser/data/` holds cookies, bookmarks, the cache and saved pages.
-- `browser/log-browser.txt` is the log (kept to about 200 KB).
-- The toolbar has Back, Fwd, Reload, the address bar, Mark, Marks, Read, Save and Exit.
-- Swipe up or down to scroll, swipe left or right for forward or back, or use the
-  page-turn buttons for a full page.
+The bottom toolbar contains Back, Forward, tabs, bookmark and Menu. Swipe vertically to
+scroll, horizontally for Back/Forward, or along the address bar to switch tabs. Page buttons
+move a screen. Long press a link to open a new tab. Menu/Display/Tabs keep Done visible;
+Menu also keeps Exit browser visible above its scrolling body.
 
-## Mac testing
+## Develop and test
 
-`kb-desktop` runs the same engine on the Mac, reading commands from stdin and
-writing each frame to `$KB_OUT`:
+```sh
+cargo test --workspace --exclude kb-kindle
+cargo build --release -p kb-desktop
+scripts/desktop-regression.sh       # 42 local scenarios; --network adds two live-site checks
+scripts/launcher-stub-test.sh       # seven launcher checks with stubs
+```
+
+Drive the same engine on the Mac and inspect the frame PNG:
 
 ```sh
 KB_FONTS=$(ls assets/fonts/*.ttf | paste -sd, -) KB_DATA=$(mktemp -d) \
-  KB_OUT=frame.png target/release/kb-desktop https://news.ycombinator.com/
-# commands: open <url|text> | tap x y | scroll dy | page ±1 | back | fwd | reload | action <name> | quit
+  KB_OUT=frame.png target/release/kb-desktop kbp://home
+# open <url|text> | tap x y | scroll dy | page ±1 | back | fwd | reload
+# action menu | action tabs | tapsel <selector> | tapkey <char> | quit
 ```
 
-## Limits and notes
+Use a fresh `KB_DATA` to isolate tests. The driver also supports assertions for URL, title,
+scroll range, tab count, navigation availability and visible controls. Full commands and
+hardware release checks are in [test and validation](docs/03-test-and-validation.md).
 
-- Timing on the Kindle is roughly 5× slower than the Mac for the same page.
-- Memory: JavaScript heap is capped at 24 MB, and each sub-resource at 2 MB.
-- Scripts that run longer than 3 seconds are interrupted.
-- Verify cookies, cache and saved pages on the device before relying on them.
+## Project layout
 
-## Documentation
-
-Requirements, architecture, the test and validation pipeline and the changelog are in
-[`docs/`](docs/README.md).
-
-## Tests
-
-```sh
-cargo test --workspace --exclude kb-kindle        # unit tests
-scripts/desktop-regression.sh                     # 20 browser scenarios on local fixtures
-scripts/launcher-stub-test.sh                     # device launcher logic, with stub commands
+```text
+crates/kb-net       HTTP, cookie jar, disk cache, blocking, resource loading
+crates/kb-engine    HTML/CSS layout, scripts, grayscale paint, hit testing, forms, reader
+crates/kb-js        QuickJS + native DOM bridge and browser-side prelude
+crates/kb-app       Browser state, tabs, history, storage, shared UI and keyboard
+crates/kb-desktop   Stdin/PNG driver for local testing
+crates/kb-kindle    evdev touch/page buttons and FBInk display
+scripts/           Desktop regression and launcher checks
+deploy/            Device launcher, installer and probes
+vendor/            QuickJS bindings patch for ARMv7 musl
 ```
+
+Start with the [documentation index](docs/README.md), [roadmap](docs/04-roadmap.md) and
+[UI/UX guide](docs/05-ui-ux.md). The [changelog](docs/CHANGELOG.md) separates released history
+from current implementation; device evidence is kept distinct from desktop results.

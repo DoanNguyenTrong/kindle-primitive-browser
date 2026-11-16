@@ -259,7 +259,8 @@ impl Page {
                 vec!["200".to_string(), f.url, String::from_utf8_lossy(&f.body).into_owned()]
             })
         });
-        let js = match Js::new(self.doc.clone(), &self.base, http) {
+        let js = match Js::new(self.doc.clone(), &self.base, http,
+            self.width as f32 / self.scale, self.height as f32 / self.scale, self.scale) {
             Ok(js) => js,
             Err(e) => {
                 eprintln!("[js] {e}");
@@ -401,10 +402,43 @@ impl Page {
         self.scroll_y
     }
 
-    /// Scroll by `dy` CSS px, clamped to the document.
+    /// Scroll by `dy` device pixels, clamped to the document.
     pub fn scroll_by(&mut self, dy: f64) {
-        self.scroll_y = (self.scroll_y + dy).clamp(0.0, self.max_scroll());
+        self.scroll_to(self.scroll_y + dy);
+    }
+
+    /// Restore an absolute reading position in device pixels.
+    pub fn scroll_to(&mut self, y: f64) {
+        if !y.is_finite() {
+            return;
+        }
+        self.scroll_y = y.clamp(0.0, self.max_scroll());
         self.doc.borrow_mut().set_viewport_scroll(blitz_dom::Point { x: 0.0, y: self.scroll_y / self.scale as f64 });
+    }
+
+    /// Jump to a URL fragment without reparsing the document or running its scripts.
+    /// Compare attributes directly: IDs may contain punctuation, Unicode or CSS syntax.
+    pub fn scroll_to_fragment(&mut self, fragment: &str) -> bool {
+        let name = percent_encoding::percent_decode_str(fragment).decode_utf8_lossy();
+        let target = if name.is_empty() {
+            Some(0.0)
+        } else {
+            let doc = self.doc.borrow();
+            let find = |selector: &str, attr: blitz_dom::LocalName| {
+                doc.query_selector_all(selector).ok()?.into_iter().find_map(|id| {
+                    let node = doc.get_node(id)?;
+                    (node.attr(attr.clone()) == Some(name.as_ref()))
+                        .then(|| node.absolute_position(0.0, 0.0).y as f64 * self.scale as f64)
+                })
+            };
+            find("[id]", blitz_dom::local_name!("id"))
+                .or_else(|| find("a[name]", blitz_dom::local_name!("name")))
+                .or_else(|| name.eq_ignore_ascii_case("top").then_some(0.0))
+        };
+        match target {
+            Some(y) => { self.scroll_to(y); true }
+            None => false,
+        }
     }
 
     /// Paint the viewport at the current scroll position as 8-bit gray (row-major).
@@ -604,9 +638,6 @@ impl Page {
         if href.starts_with("kb:") || href.starts_with("kbp://") {
             return Some(href.to_string());
         }
-        if href.starts_with('#') {
-            return None;
-        }
         let base = Url::parse(&self.base).ok()?;
         let joined = base.join(href).ok()?;
         matches!(joined.scheme(), "http" | "https").then(|| joined.to_string())
@@ -657,6 +688,13 @@ pre{{white-space:pre-wrap;font-size:28px}}
 
     pub fn base_url(&self) -> &str {
         &self.base
+    }
+
+    pub fn set_location(&mut self, url: &str) {
+        self.base = url.to_string();
+        if let Some(js) = self.js.as_ref() {
+            js.set_location(url);
+        }
     }
 }
 
@@ -745,6 +783,30 @@ pub fn extract_title(html: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fragment_targets_support_encoded_ids_named_anchors_and_absolute_scroll() {
+        let html = r#"<!doctype html><html><head><style>body{margin:0}div{height:1000px}h2{margin:0;height:100px}</style></head><body>
+            <div></div><h2 id="chương+2:reading">Section</h2><a name="legacy"></a><div></div><div></div></body></html>"#;
+        let mut page = Page::new_scaled(html, "https://example.org/article", 600, 800,
+            Arc::new(SyncNet::new(1024)), &mut || true, Some(300.0));
+        assert!(page.scroll_to_fragment("ch%C6%B0%C6%A1ng+2:reading"));
+        assert_eq!(page.scroll_y(), 2000.0);
+        page.scroll_to(500.0);
+        page.scroll_to(500.0);
+        assert_eq!(page.scroll_y(), 500.0);
+        assert!(page.scroll_to_fragment("legacy"));
+        assert!(page.scroll_y() >= 2200.0);
+        let saved = page.scroll_y();
+        assert!(!page.scroll_to_fragment("missing"));
+        assert_eq!(page.scroll_y(), saved);
+        assert!(page.scroll_to_fragment("TOP"));
+        assert_eq!(page.scroll_y(), 0.0);
+        page.scroll_to(400.0);
+        assert!(page.scroll_to_fragment(""));
+        assert_eq!(page.scroll_y(), 0.0);
+        assert_eq!(page.resolve("#part").as_deref(), Some("https://example.org/article#part"));
+    }
 
     #[test]
     fn title_is_found_case_insensitively_and_trimmed() {

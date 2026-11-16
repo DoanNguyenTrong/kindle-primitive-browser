@@ -14,3 +14,4 @@ parley.workspace = true
 kb-net = { path = "../kb-net" }
 kb-js = { path = "../kb-js" }
 url = "2"
+percent-encoding = "2"

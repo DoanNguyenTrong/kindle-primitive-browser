@@ -5,7 +5,7 @@
 //! Measurements (device pixels on the 1264 x 1680 panel):
 //! - Unit: 8 px. Side margin 20 px on bars and sheets, 24 px on pages.
 //! - Address bar 96 px tall; its pill is 68 px. Bottom toolbar 104 px, five equal cells.
-//! - Sheets 780 px tall: a 72 px title strip, then rows of 96 px with 1 px dividers.
+//! - Sheets 780 px tall: a pinned 72 px title strip, then a separate 708 px scrolling body.
 //! - Icons: 40 px in rows, 36 px in bars. Touch targets are at least 68 px.
 //! - Type: 32 px rows and bar text, 26 px secondary text, 22 px captions, 44 px page titles.
 //!
@@ -13,7 +13,7 @@
 //! here for this browser. Colours are black on white plus light grey fills and dividers;
 //! e-ink shows mid-greys only roughly, so no meaning rests on a tint alone.
 
-use crate::{esc, width_name, Key, Layer, BOT_H, KB_Y, MENU_H, PAGE_WIDTHS, TOP_H};
+use crate::{esc, width_name, Key, Layer, BOT_H, KB_Y, PAGE_WIDTHS, TOP_H, SHEET_TITLE_H};
 
 /// Line icon from the set below, at `size` device pixels.
 pub fn icon(name: &str, size: u32) -> String {
@@ -77,8 +77,10 @@ html,body{{margin:0;background:#fff;color:#111;font-family:sans-serif;overflow:h
 .cell.off{{color:#c4c4c4}}
 .cell.on{{color:#111}}
 .count{{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border:2px solid #111;border-radius:10px;font-size:24px;font-weight:bold;color:#111}}
-.sheet{{height:{MENU_H}px;border-top:2px solid #e2e2e2;overflow:hidden;background:#fff}}
-.sheet-title{{display:flex;align-items:center;height:72px;padding:0 24px;font-size:26px;letter-spacing:1px;color:#666;border-bottom:1px solid #e2e2e2}}
+.sheet{{background:#fff}}
+.sheet-title{{display:flex;align-items:center;justify-content:space-between;height:{SHEET_TITLE_H}px;padding:0 24px;font-size:26px;letter-spacing:1px;color:#666;border-bottom:2px solid #111}}
+.sheet-controls{{display:flex;gap:16px}}
+.sheet-title .btn{{height:68px;font-size:24px}}
 .section{{padding:22px 24px 6px;font-size:22px;color:#777;letter-spacing:1px}}
 .row{{display:flex;align-items:center;gap:20px;min-height:96px;padding:12px 24px;border-bottom:1px solid #e6e6e6;font-size:32px;color:#111;text-decoration:none}}
 .row .main{{flex:1;min-width:0}}
@@ -141,14 +143,16 @@ pub fn top(url: &str) -> String {
 pub fn bottom(back: bool, fwd: bool, marked: bool, tabs: usize) -> String {
     let cell = |on: bool, name: &str, href: &str| {
         let (class, target) = if on { ("cell on", href) } else { ("cell off", "#") };
-        format!(r#"<a class="{class}" href="{target}">{i}</a>"#, i = icon(name, 40))
+        format!(r#"<a class="{class}" href="{target}" aria-label="{label}" aria-disabled="{disabled}">{i}</a>"#,
+            label = if name == "back" { "Back" } else { "Forward" }, disabled = !on, i = icon(name, 40))
     };
     let mark = if marked { icon("star-on", 40) } else { icon("star", 40) };
     let body = format!(
-        r#"<div class="toolbar">{}{}<a class="cell" href="kb:tabs"><span class="count">{tabs}</span></a><a class="cell{mk}" href="kb:mark">{mark}</a><a class="cell" href="kb:menu">{dots}</a></div>"#,
+        r#"<div class="toolbar">{}{}<a class="cell" href="kb:tabs" aria-label="Tabs ({tabs})"><span class="count">{tabs}</span></a><a class="cell{mk}" href="kb:mark" aria-label="{mark_label}">{mark}</a><a class="cell" href="kb:menu" aria-label="Menu">{dots}</a></div>"#,
         cell(back, "back", "kb:back"),
         cell(fwd, "forward", "kb:fwd"),
         mk = if marked { " on" } else { "" },
+        mark_label = if marked { "Remove bookmark" } else { "Add bookmark" },
         dots = icon("dots", 40),
     );
     document("Toolbar", &body, "")
@@ -193,14 +197,16 @@ pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, display: &st
         out.push_str(&rows.concat());
     }
     out.push_str(&format!(r#"<div style="height:24px"></div>"#));
-    // Exit lives in the title strip so it is always on screen, never below the fold.
-    let body = format!(
-        r#"<div class="sheet"><div class="sheet-title"><span class="sheet-name">Menu</span><a class="exit-btn" href="kb:exit">Exit browser</a></div>{out}</div>"#
-    );
-    let extra = ".sheet-title{justify-content:space-between}\
-.sheet-name{flex:1}\
-.exit-btn{display:flex;align-items:center;height:56px;padding:0 24px;border-radius:28px;background:#111;color:#fff;font-size:24px;text-decoration:none}";
-    document("Menu", &body, extra)
+    document("Menu", &format!(r#"<div class="sheet">{out}</div>"#), "")
+}
+
+/// A separate layer keeps dismissal (and Exit in the menu) visible as the body scrolls.
+pub fn sheet_header(title: &str, exit: bool) -> String {
+    let exit = if exit { r#"<a class="btn on" href="kb:exit">Exit browser</a>"# } else { "" };
+    document(title, &format!(
+        r#"<div class="sheet-title"><span>{}</span><div class="sheet-controls">{exit}<a class="btn" href="kb:closemenu">Done</a></div></div>"#,
+        esc(title)
+    ), "")
 }
 
 /// Display sheet: text size steps, page width, and day or night. Changes apply at once and the
@@ -214,7 +220,7 @@ pub fn display(text_pct: u32, width: u32, night: bool) -> String {
         .map(|&w| seg(&format!("kb:width:{w}"), width_name(w), w == width))
         .collect();
     let body = format!(
-        r#"<div class="sheet"><div class="sheet-title"><span class="sheet-name">Display</span><a class="pill" href="kb:closemenu">Done</a></div>
+        r#"<div class="sheet">
 <div class="section">TEXT SIZE</div>
 <div class="stepper"><a class="step" href="kb:font:-" aria-label="Smaller text">A-</a><span class="stepval">{text_pct}%</span><a class="step" href="kb:font:+" aria-label="Larger text">A+</a></div>
 <div class="section">PAGE WIDTH</div>
@@ -225,10 +231,7 @@ pub fn display(text_pct: u32, width: u32, night: bool) -> String {
         day = seg("kb:nightoff", "Day", !night),
         dark = seg("kb:nighton", "Night", night),
     );
-    let extra = ".sheet-title{justify-content:space-between}\
-.sheet-name{flex:1}\
-.pill{display:flex;align-items:center;height:56px;padding:0 28px;border-radius:28px;background:#111;color:#fff;font-size:24px;text-decoration:none}\
-.stepper{display:flex;align-items:center;gap:20px;margin:0 24px;height:104px}\
+    let extra = ".stepper{display:flex;align-items:center;gap:20px;margin:0 24px;height:104px}\
 .step{display:flex;align-items:center;justify-content:center;width:160px;height:96px;border:2px solid #111;border-radius:16px;font-size:36px;font-weight:bold;color:#111;text-decoration:none}\
 .stepval{flex:1;text-align:center;font-size:40px;color:#111}\
 .seg{display:flex;gap:12px;margin:0 24px;height:88px}\
@@ -256,16 +259,15 @@ pub fn tabs(tabs: &[(String, String)], active: usize) -> String {
         p = icon("plus", 48)
     ));
     let body = format!(
-        r#"<div class="sheet"><div class="sheet-title">{n} OPEN TABS</div><div class="cards">{cards}</div><a class="row" href="kb:closemenu"><span class="main">Done</span></a></div>"#,
-        n = tabs.len()
+        r#"<div class="sheet"><div class="cards">{cards}</div></div>"#
     );
     let extra = ".cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px 20px}\
 .card{position:relative;height:220px;border:1px solid #cfcfcf;border-radius:14px;overflow:hidden}\
 .card.current{border:2px solid #111}\
-.card-body{display:flex;flex-direction:column;justify-content:space-between;height:100%;padding:18px 18px 14px;color:#111;text-decoration:none}\
+.card-body{display:flex;flex-direction:column;justify-content:space-between;height:100%;padding:18px 90px 14px 18px;color:#111;text-decoration:none}\
 .card-title{font-size:26px;line-height:1.2;overflow:hidden;max-height:68px}\
 .card .sub{font-size:20px;color:#777;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}\
-.card-close{position:absolute;top:8px;right:8px;width:52px;height:52px;display:flex;align-items:center;justify-content:center;border-radius:26px;background:#f1f1f1;color:#111;text-decoration:none}\
+.card-close{position:absolute;top:8px;right:8px;width:68px;height:68px;display:flex;align-items:center;justify-content:center;border-radius:34px;background:#f1f1f1;color:#111;text-decoration:none}\
 .card.new{display:flex;flex-direction:column;align-items:center;justify-content:center;border-style:dashed;text-decoration:none;color:#111}\
 .plus{display:flex;margin-bottom:6px}";
     document("Tabs", &body, extra)

@@ -355,6 +355,9 @@
     toJSON() { return this.href; }
   }
   globalThis.URL = URLLite;
+  // Object.assign copies own properties only; href is a getter on URLLite, so set it explicitly.
+  const copyLocation = (u) => Object.assign(globalThis.location, u, { href: u.href });
+  try { copyLocation(new URLLite(href)); } catch (_) {}
   globalThis.URLSearchParams = URLSearchParams;
 
   // Timing and scheduling.
@@ -406,9 +409,9 @@
   // Layout queries used for feature checks.
   const cssWidth = globalThis.__kbCssWidth || 412;
   globalThis.innerWidth = cssWidth;
-  globalThis.innerHeight = 800;
+  globalThis.innerHeight = globalThis.__kbCssHeight || 800;
   globalThis.outerWidth = cssWidth;
-  globalThis.devicePixelRatio = 3;
+  globalThis.devicePixelRatio = globalThis.__kbDevicePixelRatio || 1;
   globalThis.matchMedia = (q) => {
     const test = (re, ok) => { const m = re.exec(q); return m ? ok(Number(m[1])) : null; };
     const results = [
@@ -435,6 +438,7 @@
 
   // ---- entry points used by the host ---------------------------------------
   globalThis.__kb = {
+    setLocation: (url) => copyLocation(new URLLite(url)),
     click: (id) => dispatch(id, 'click'),
     runTimers: () => {
       let n = 0;

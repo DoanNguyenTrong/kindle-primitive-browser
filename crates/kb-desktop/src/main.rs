@@ -137,6 +137,30 @@ fn main() -> io::Result<()> {
                 let text = b.text_in_page(&sel).unwrap_or_else(|| "(no match)".to_string());
                 eprintln!("[text] {sel}: {text}");
             }
+            "assert" => {
+                let kind = parts.next().unwrap_or("");
+                let expected = parts.collect::<Vec<_>>().join(" ");
+                let ok = match kind {
+                    "url" => b.url() == expected,
+                    "title" => b.title() == expected,
+                    "tabs" => expected.parse::<usize>().ok() == Some(b.tab_count()),
+                    "back" => expected.parse::<bool>().ok() == Some(b.can_go_back()),
+                    "forward" => expected.parse::<bool>().ok() == Some(b.can_go_forward()),
+                    "scroll" => {
+                        let range: Vec<f64> = expected.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+                        range.len() == 2 && b.scroll_pos() >= range[0] && b.scroll_pos() <= range[1]
+                    }
+                    "visible" => b.screen_center(&expected).is_some_and(|(x, y)| x >= 0.0 && x < W as f32 && y >= 0.0 && y < H as f32),
+                    _ => false,
+                };
+                if !ok {
+                    return Err(io::Error::other(format!(
+                        "assertion failed: {kind} {expected}; url={}, title={}, scroll={}, tabs={}, back={}, forward={}",
+                        b.url(), b.title(), b.scroll_pos(), b.tab_count(), b.can_go_back(), b.can_go_forward()
+                    )));
+                }
+                eprintln!("[assert] {kind} {expected}: PASS");
+            }
             "quit" => break,
             "" => continue,
             other => {

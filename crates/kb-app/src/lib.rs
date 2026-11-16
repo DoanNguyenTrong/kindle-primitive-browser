@@ -32,6 +32,8 @@ pub const KB_Y: u32 = 950;
 pub const PROGRESS_H: u32 = 8;
 /// Menu sheet height.
 pub const MENU_H: u32 = 780;
+/// Pinned title and dismissal controls above the scrollable sheet body.
+pub const SHEET_TITLE_H: u32 = 72;
 
 /// Largest main document we accept.
 const MAX_DOC_BYTES: u64 = 6 * 1024 * 1024;
@@ -100,6 +102,15 @@ struct Cached {
     gray: Vec<u8>,
 }
 
+/// The live page and the source/view state that must travel with it.
+struct PreviousPage {
+    url: String,
+    page: Page,
+    source: String,
+    reader_source: Option<String>,
+    is_web: bool,
+}
+
 pub struct Browser {
     width: u32,
     height: u32,
@@ -115,6 +126,8 @@ pub struct Browser {
     page_gray_offset: u32,
     page_dirty: bool,
     source: String,
+    reader_source: Option<String>,
+    page_is_web: bool,
     url: String,
     reader: bool,
     chrome: bool,
@@ -126,7 +139,7 @@ pub struct Browser {
     input_target: Option<u64>,
     settings: Settings,
     /// The page left most recently, kept live so Back is instant. Capped at one: memory stays at two pages.
-    previous: Option<(String, Page)>,
+    previous: Option<PreviousPage>,
     /// URL of the page on screen (to tell it apart from the previous one).
     page_url: String,
     toast: Option<(String, Instant)>,
@@ -143,6 +156,7 @@ pub struct Browser {
     top: Option<Cached>,
     bottom: Option<Cached>,
     sheet_layer: Option<Cached>,
+    sheet_header: Option<Cached>,
 
     exit: bool,
     navigating_history: bool,
@@ -176,6 +190,8 @@ impl Browser {
             page_gray_offset: u32::MAX,
             page_dirty: true,
             source: String::new(),
+            reader_source: None,
+            page_is_web: false,
             url: String::new(),
             reader: false,
             chrome: true,
@@ -198,6 +214,7 @@ impl Browser {
             top: None,
             bottom: None,
             sheet_layer: None,
+            sheet_header: None,
             exit: false,
             navigating_history: false,
             bookmarks: read_pairs(&data_file("bookmarks.tsv")),
@@ -234,8 +251,12 @@ impl Browser {
             return Some((x, y + KB_Y as f32));
         }
         if let Some(sheet) = self.sheet {
+            if let Some(b) = self.ensure_sheet_header(sheet).page.element_box(selector) {
+                let (x, y) = centre(b);
+                return Some((x, y + (self.height - MENU_H) as f32));
+            }
             let (x, y) = centre(self.ensure_sheet(sheet).page.element_box(selector)?);
-            return Some((x, y + (self.height - MENU_H) as f32));
+            return Some((x, y + (self.height - MENU_H + SHEET_TITLE_H) as f32));
         }
         let (x, y) = centre(self.page.as_ref()?.element_box(selector)?);
         Some((x, y + self.page_offset() as f32))
@@ -328,6 +349,10 @@ impl Browser {
         self.idx + 1 < self.history.len()
     }
 
+    pub fn tab_count(&self) -> usize {
+        self.tabs.len()
+    }
+
     pub fn exit_requested(&self) -> bool {
         self.exit
     }
@@ -364,6 +389,10 @@ impl Browser {
         self.history.push(target.clone());
         self.scrolls.push(0.0);
         self.idx = self.history.len() - 1;
+        if self.page.is_some() && same_document(&self.url, &target) && self.url != target {
+            self.show_fragment(&target);
+            return;
+        }
         if self.load(&target, Policy::Network).is_err() {
             // Cancelled by the user before it arrived: undo the history entry.
             self.history.pop();
@@ -400,9 +429,16 @@ impl Browser {
     fn load_history_entry(&mut self, prev: usize) {
         let url = self.history[self.idx].clone();
         let saved = self.scrolls.get(self.idx).copied().unwrap_or(0.0);
+        if self.page.is_some() && same_document(&self.url, &url) && self.url != url {
+            self.show_fragment(&url);
+            if let Some(page) = self.page.as_mut() {
+                page.scroll_to(saved);
+            }
+            return;
+        }
         if self.restore_previous(&url) {
             if let Some(page) = self.page.as_mut() {
-                page.scroll_by(saved);
+                page.scroll_to(saved);
             }
             return;
         }
@@ -412,11 +448,26 @@ impl Browser {
         match outcome {
             Ok(()) => {
                 if let Some(page) = self.page.as_mut() {
-                    page.scroll_by(saved);
+                    page.scroll_to(saved);
                 }
             }
             Err(Cancelled) => self.idx = prev,
         }
+    }
+
+    fn show_fragment(&mut self, url: &str) {
+        if let Some(page) = self.page.as_mut() {
+            page.set_location(url);
+            let parsed = url::Url::parse(url).ok();
+            page.scroll_to_fragment(parsed.as_ref().and_then(|u| u.fragment()).unwrap_or(""));
+        }
+        self.url = url.to_string();
+        self.page_url = url.to_string();
+        self.keyboard = false;
+        self.sheet = None;
+        self.chrome = true;
+        self.page_dirty = true;
+        self.touch(0, self.height, Wave::Text);
     }
 
     /// Carry out a submitted form: GET navigates to the query URL, POST sends the fields.
@@ -447,7 +498,6 @@ impl Browser {
         self.keyboard = false;
         self.sheet = None;
         self.chrome = true;
-        self.reader = false;
         self.page_dirty = true;
         let u = url.to_string();
         let outcome = self.run_job(move || kb_net::post_form(&u, &fields, MAX_DOC_BYTES))?;
@@ -458,13 +508,12 @@ impl Browser {
                     *last = f.url.clone();
                 }
                 let html = String::from_utf8_lossy(&f.body).into_owned();
-                self.source = html.clone();
                 self.build_page(&html, &f.url, true);
+                self.record_web_visit();
             }
             Err(e) => {
                 eprintln!("[post] {url}: {e}");
                 let html = ui::error("Could not load this page", &load_reason(&e), &e);
-                self.source = html.clone();
                 self.build_page(&html, url, false);
             }
         }
@@ -473,30 +522,42 @@ impl Browser {
     }
 
     /// Move the page on screen into the one-page cache.
-    fn stash_current(&mut self) {
+    fn stash_current(&mut self, next_url: &str) {
         if let Some(page) = self.page.take() {
-            if !self.page_url.is_empty() && self.page_url != self.url {
-                self.previous = Some((self.page_url.clone(), page));
+            if !self.page_url.is_empty() && self.page_url != next_url {
+                self.previous = Some(PreviousPage {
+                    url: self.page_url.clone(),
+                    page,
+                    source: std::mem::take(&mut self.source),
+                    reader_source: self.reader_source.take(),
+                    is_web: self.page_is_web,
+                });
             }
         }
-        self.page_url = self.url.clone();
+        self.page_url = next_url.to_string();
     }
 
     /// Restore the cached previous page, if it is the one we want. Returns true when used.
     fn restore_previous(&mut self, url: &str) -> bool {
-        let Some((prev_url, _)) = &self.previous else { return false };
-        if prev_url != url {
+        let Some(previous) = &self.previous else { return false };
+        if previous.url != url && !same_document(&previous.url, url) {
             return false;
         }
-        let Some((_, page)) = self.previous.take() else { return false };
-        self.stash_current();
-        self.page = Some(page);
+        let Some(previous) = self.previous.take() else { return false };
+        self.stash_current(url);
+        self.page = Some(previous.page);
+        if let Some(page) = self.page.as_mut() {
+            page.set_location(url);
+        }
+        self.source = previous.source;
+        self.reader_source = previous.reader_source;
+        self.page_is_web = previous.is_web;
         self.page_url = url.to_string();
         self.url = url.to_string();
         self.keyboard = false;
         self.sheet = None;
         self.chrome = true;
-        self.reader = false;
+        self.reader = self.reader_source.is_some();
         self.page_dirty = true;
         self.touch(0, self.height, Wave::Text);
         true
@@ -515,7 +576,6 @@ impl Browser {
         self.keyboard = false;
         self.sheet = None;
         self.chrome = true;
-        self.reader = false;
         self.page_dirty = true;
         // Show the address bar with the new URL (and the progress strip under it) before waiting,
         // even when the bars were hidden by scrolling. Otherwise the strip lands on page content.
@@ -532,7 +592,14 @@ impl Browser {
             (self.internal_html(rest), base, false)
         } else {
             match self.fetch_with_progress(url, policy)? {
-                Ok(f) => {
+                Ok(mut f) => {
+                    // HTTP does not send the fragment; keep it when the response URI omits it.
+                    if let (Ok(requested), Ok(mut final_url)) = (url::Url::parse(url), url::Url::parse(&f.url)) {
+                        if final_url.fragment().is_none() {
+                            final_url.set_fragment(requested.fragment());
+                            f.url = final_url.to_string();
+                        }
+                    }
                     self.url = f.url.clone();
                     if let Some(last) = self.history.get_mut(self.idx) {
                         *last = f.url.clone();
@@ -550,14 +617,22 @@ impl Browser {
                 }
             }
         };
-        self.source = html.clone();
         self.build_page(&html, &base, is_web);
+        if is_web {
+            self.record_web_visit();
+        }
+        if let Some(fragment) = url::Url::parse(&self.url).ok().and_then(|u| u.fragment().map(str::to_owned)) {
+            if let Some(page) = self.page.as_mut() {
+                page.scroll_to_fragment(&fragment);
+            }
+        }
         self.touch(0, self.height, Wave::Text);
         Ok(())
     }
 
     /// Build the page, waiting for resources with progress. Images are deferred.
     fn build_page(&mut self, html: &str, base: &str, is_web: bool) {
+        let source = html.to_string();
         let prepared = prepare_html(html, &self.settings);
         let html = prepared.as_str();
         let stats = self.net.stats();
@@ -590,12 +665,21 @@ impl Browser {
             }
         };
         page.start_deferred_images();
-        self.stash_current();
-        if is_web {
-            self.record_visit(&self.url.clone(), page.title.as_str());
-            kb_net::save_cookies();
-        }
+        self.stash_current(&self.url.clone());
+        self.source = source;
+        self.reader_source = None;
+        self.reader = false;
+        self.page_is_web = is_web;
         self.page = Some(page);
+    }
+
+    /// Record a web page the reader navigated to (history and cookies). Rebuilds such as
+    /// reflow or reader view lay the page out again without recording it a second time.
+    fn record_web_visit(&mut self) {
+        let url = self.url.clone();
+        let title = self.title().to_string();
+        self.record_visit(&url, &title);
+        kb_net::save_cookies();
     }
 
     /// Fetch a document on a worker thread so the UI can report progress and
@@ -761,7 +845,12 @@ impl Browser {
         }
         if let Some(sheet) = self.sheet {
             if y >= h - MENU_H as f32 {
-                let href = self.ensure_sheet(sheet).page.link_at(x, y - (h - MENU_H as f32));
+                let sy = y - (h - MENU_H as f32);
+                let href = if sy < SHEET_TITLE_H as f32 {
+                    self.ensure_sheet_header(sheet).page.link_at(x, sy)
+                } else {
+                    self.ensure_sheet(sheet).page.link_at(x, sy - SHEET_TITLE_H as f32)
+                };
                 eprintln!("[ui] sheet={sheet:?} tap ({x:.0},{y:.0}) -> {href:?}");
                 if let Some(href) = href {
                     if !stays_open(&href) {
@@ -998,6 +1087,8 @@ impl Browser {
 
     /// Rebuild the page on screen from its source with the current settings, keeping the reading position.
     fn reflow(&mut self) {
+        // A cached layout belongs to the previous display/image settings.
+        self.previous = None;
         let url = self.url.clone();
         if url.is_empty() || url.starts_with("kbp://") || url.starts_with("kb://") || self.source.is_empty() {
             // Reloading an internal page clears the sheet; keep the one the user is adjusting.
@@ -1009,9 +1100,15 @@ impl Browser {
         }
         let scroll = self.page.as_ref().map_or(0.0, |p| p.scroll_y());
         let source = self.source.clone();
-        self.build_page(&source, &url, true);
+        let reader_source = self.reader_source.clone();
+        let rendered = reader_source.as_deref().unwrap_or(&source);
+        let base = self.page.as_ref().map_or(url.as_str(), |p| p.base_url()).to_string();
+        self.build_page(rendered, &base, self.page_is_web);
+        self.source = source;
+        self.reader = reader_source.is_some();
+        self.reader_source = reader_source;
         if let Some(page) = self.page.as_mut() {
-            page.scroll_by(scroll);
+            page.scroll_to(scroll);
         }
         self.page_dirty = true;
         self.touch(0, self.height, Wave::Text);
@@ -1175,7 +1272,11 @@ impl Browser {
         }
         let Some(html) = self.page.as_ref().and_then(|p| p.reader_html()) else { return };
         let base = self.url.clone();
-        self.build_page(&html, &base, false);
+        let source = self.source.clone();
+        // The reader view is article markup from a web page: lay it out at the chosen width.
+        self.build_page(&html, &base, true);
+        self.source = source;
+        self.reader_source = Some(html);
         self.reader = true;
         self.touch(0, self.height, Wave::Text);
     }
@@ -1275,8 +1376,13 @@ impl Browser {
         if let Some(sheet) = self.sheet {
             if y >= h - MENU_H as f32 {
                 let top = h - MENU_H as f32;
-                let (bx, by, bw, bh) = self.ensure_sheet(sheet).page.link_box(x, y - top)?;
-                return Some((bx, by + top, bw, bh));
+                if y < top + SHEET_TITLE_H as f32 {
+                    let (bx, by, bw, bh) = self.ensure_sheet_header(sheet).page.link_box(x, y - top)?;
+                    return Some((bx, by + top, bw, bh));
+                }
+                let body_top = top + SHEET_TITLE_H as f32;
+                let (bx, by, bw, bh) = self.ensure_sheet(sheet).page.link_box(x, y - body_top)?;
+                return Some((bx, by + body_top, bw, bh));
             }
             return None;
         }
@@ -1306,7 +1412,9 @@ impl Browser {
         let (w, h) = (self.width, self.height);
         if let Some(sheet) = self.sheet {
             let layer = self.ensure_sheet(sheet).gray.clone();
-            blit(&mut out, w, h - MENU_H, &layer, MENU_H);
+            blit(&mut out, w, h - MENU_H + SHEET_TITLE_H, &layer, MENU_H - SHEET_TITLE_H);
+            let header = self.ensure_sheet_header(sheet).gray.clone();
+            blit(&mut out, w, h - MENU_H, &header, SHEET_TITLE_H);
         } else if self.chrome {
             let top = self.ensure_top().gray.clone();
             blit(&mut out, w, 0, &top, TOP_H);
@@ -1403,11 +1511,26 @@ impl Browser {
                 Sheet::Tabs => ui::tabs(&tabs, self.active),
                 Sheet::Display => ui::display(self.settings.text_pct, self.settings.page_width, self.settings.night),
             };
-            let mut c = self.render_layer(&html, "kb://chrome/", self.width, MENU_H);
+            let mut c = self.render_layer(&html, "kb://chrome/", self.width, MENU_H - SHEET_TITLE_H);
             c.key = key;
             self.sheet_layer = Some(c);
         }
         self.sheet_layer.as_mut().expect("sheet layer")
+    }
+
+    fn ensure_sheet_header(&mut self, sheet: Sheet) -> &mut Cached {
+        let title = match sheet {
+            Sheet::Menu => "Menu".to_string(),
+            Sheet::Tabs => format!("{} open {}", self.tabs.len(), if self.tabs.len() == 1 { "tab" } else { "tabs" }),
+            Sheet::Display => "Display".to_string(),
+        };
+        if self.sheet_header.as_ref().map_or(true, |c| c.key != title) {
+            let html = ui::sheet_header(&title, sheet == Sheet::Menu);
+            let mut c = self.render_layer(&html, "kb://chrome/", self.width, SHEET_TITLE_H);
+            c.key = title;
+            self.sheet_header = Some(c);
+        }
+        self.sheet_header.as_mut().expect("sheet header")
     }
 
     /// (title, url) for each tab, the active one included.
@@ -1454,16 +1577,31 @@ impl Browser {
         self.url = t.url.clone();
         self.active = n;
         self.sheet = None;
+        // Tabs keep navigation metadata; only the active tab owns a live document.
+        // Never reuse a different tab's DOM or its live-page cache, even for the same URL.
+        self.page = None;
+        self.previous = None;
+        self.page_url.clear();
+        // The HTML on screen belonged to the previous tab. Clear it so a load that is cancelled
+        // leaves nothing to save or reflow under this tab's address.
+        self.source.clear();
+        self.reader_source = None;
+        self.reader = false;
         let url = t.url;
         if url.is_empty() {
             self.open("kbp://home");
         } else {
             let _ = self.load(&url, Policy::Cache(Duration::from_secs(60 * 60 * 24 * 7)));
+            let saved = self.scrolls.get(self.idx).copied().unwrap_or(0.0);
+            if let Some(page) = self.page.as_mut() {
+                page.scroll_to(saved);
+            }
+            self.page_dirty = true;
+            self.touch(0, self.height, Wave::Text);
         }
     }
 
     fn new_tab(&mut self) {
-        self.stash_active();
         self.tabs.push(TabSave::empty());
         let n = self.tabs.len() - 1;
         self.switch_tab(n);
@@ -1473,10 +1611,17 @@ impl Browser {
     }
 
     fn close_tab(&mut self, n: usize) {
-        if self.tabs.len() <= 1 || n >= self.tabs.len() {
+        if n >= self.tabs.len() {
             return;
         }
-        if n == self.active {
+        let sheet = self.sheet;
+        if self.tabs.len() == 1 {
+            self.history.clear();
+            self.scrolls.clear();
+            self.idx = 0;
+            self.open("kbp://home");
+            self.previous = None;
+        } else if n == self.active {
             let next = if n + 1 < self.tabs.len() { n + 1 } else { n - 1 };
             self.switch_tab(next);
             let removed = n;
@@ -1490,7 +1635,8 @@ impl Browser {
                 self.active -= 1;
             }
         }
-        self.touch(self.height - MENU_H, self.height, Wave::Text);
+        self.sheet = sheet;
+        self.touch(0, self.height, Wave::Text);
     }
 
     fn ensure_field(&mut self) -> &mut Cached {
@@ -1714,6 +1860,17 @@ pub fn normalize(input: &str) -> String {
     format!("https://{s}")
 }
 
+/// Fragment navigation must never treat a query change or a different origin as the same page.
+fn same_document(a: &str, b: &str) -> bool {
+    let (Ok(mut a), Ok(mut b)) = (url::Url::parse(a), url::Url::parse(b)) else { return false };
+    if !matches!(a.scheme(), "http" | "https") {
+        return false;
+    }
+    a.set_fragment(None);
+    b.set_fragment(None);
+    a == b
+}
+
 /// Name of a page width, as shown to the reader.
 pub fn width_name(width: u32) -> &'static str {
     match width {
@@ -1751,6 +1908,19 @@ struct Settings {
     home_recent_open: bool,
     /// Whether images are fetched and drawn. Off saves memory and bandwidth for text reading.
     images: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            text_pct: 100,
+            night: false,
+            page_width: DEFAULT_PAGE_WIDTH,
+            home_bookmarks_open: true,
+            home_recent_open: true,
+            images: true,
+        }
+    }
 }
 
 impl Settings {
@@ -1920,6 +2090,16 @@ mod tests {
     }
 
     #[test]
+    fn same_document_compares_origin_path_and_query_but_ignores_fragment() {
+        assert!(same_document("https://example.org/a?q=1#one", "https://example.org/a?q=1#two"));
+        for other in ["http://example.org/a?q=1", "https://example.org/b?q=1", "https://example.org/a?q=2", "https://other.org/a?q=1", "https://example.org:8443/a?q=1"] {
+            assert!(!same_document("https://example.org/a?q=1", other));
+        }
+        assert!(!same_document("kbp://home#one", "kbp://home#two"));
+        assert!(!same_document("invalid", "invalid"));
+    }
+
+    #[test]
     fn url_splits_into_host_and_path_for_the_address_bar() {
         let (host, path) = split_url("https://truyendich.space/doc-truyen/x?y=1");
         assert_eq!(host, "truyendich.space");
@@ -1929,11 +2109,11 @@ mod tests {
 
     #[test]
     fn page_css_goes_into_the_head_so_standards_mode_is_kept() {
-        let settings = Settings { text_pct: 125, night: false };
+        let settings = Settings { text_pct: 125, ..Settings::default() };
         let out = prepare_html("<!doctype html><html><head><title>t</title></head><body></body></html>", &settings);
         assert!(out.starts_with("<!doctype html><html><head><style>"));
         assert!(out.contains("zoom:125%"));
-        let plain = prepare_html("<!doctype html><p>x</p>", &Settings { text_pct: 100, night: false });
+        let plain = prepare_html("<!doctype html><p>x</p>", &Settings::default());
         assert!(plain.starts_with("<!doctype html><style>"));
     }
 
