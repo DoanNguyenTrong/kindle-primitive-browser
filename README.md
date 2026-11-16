@@ -131,7 +131,7 @@ macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 | Kindle Oasis 3 (1264 × 1680, firmware 5.18.2) | ✅ Verified on hardware |
 | Other Kindle models | 🛠️ Not supported yet. See [device support](docs/DEVICES.md) for the plan. |
 
-**Current version: 0.1.18.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
+**Current version: 0.2.1.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
 observations are in [device notes](docs/device-notes.md).
 
 ## Limits
@@ -167,18 +167,19 @@ See [requirements](docs/01-requirements.md) for the full list.
 
 Planned in this order. Details are in the [roadmap](docs/04-roadmap.md) and [device support](docs/DEVICES.md).
 
-- [ ] Scripts on or off per site, with `<noscript>` content shown when they are off
-- [ ] Complete forms: several fields, checkboxes, radio buttons, selects, and submit
-- [ ] Find in page, with e-ink friendly next and previous controls
-- [ ] `XMLHttpRequest` as a thin wrapper over `fetch`
-- [ ] `localStorage` kept per site across restarts
-- [ ] Working `setInterval`, basic `MutationObserver`, and `history.pushState` events
-- [ ] Full `matchMedia` queries
-- [ ] Images off by default for web pages, with alt-text placeholders (see the measurements under Limits)
-- [ ] Faster page turns (about one second today)
-- [ ] Find what makes a large page reach 163 MB
-- [ ] A ten-page site matrix, to test these features on real sites
-- [ ] Device profiles for other Kindle models (see [device support](docs/DEVICES.md))
+- [x] Scripts on or off per site, with `<noscript>` content shown when they are off
+- [x] Complete forms: checkboxes, radio buttons, select lists, password masking, Done/Submit, and `input`/`change`/cancelable `submit` events for page scripts
+- [x] Find in page: a Find button in the menu; each Find moves to the next match (the controls are the keyboard's Find key, not separate next/previous buttons)
+- [x] `XMLHttpRequest` as a thin wrapper over `fetch`
+- [x] `localStorage` kept per site across restarts
+- [x] `popstate` on Back and Forward to an entry the page pushed (the document is not loaded again). `history.pushState` adds an entry, and the basic `MutationObserver` is done
+- [ ] A timed `setInterval`: intervals fire three times while a page settles, then stop, because a timed repeat would redraw pages on e-ink
+- [x] Full `matchMedia` queries (lists, `and`, `not`, size, orientation, colour scheme, pointer)
+- [x] Images off by default for web pages, with alt-text placeholders (see the measurements under Limits)
+- [ ] Faster page turns (about one second today). The engine takes under 1 ms per turn; the rest is painting and the e-ink update. See [docs/PERFORMANCE.md](docs/PERFORMANCE.md)
+- [ ] Find what makes a large page reach 163 MB. Desktop attribution: a text page costs about 77 MB, and each image about 0.45 MB; see [docs/PERFORMANCE.md](docs/PERFORMANCE.md). The device check is still to do
+- [x] A ten-page site matrix, to test these features on real sites (eight pass; results in [docs/SITE-MATRIX.md](docs/SITE-MATRIX.md))
+- [ ] Device profiles for other Kindle models (see [device support](docs/DEVICES.md)). The per-model table exists with the Oasis 3 only; other models need their values read from the device
 - [ ] A hardware check for each new model
 
 ### Why these are not planned
@@ -246,7 +247,7 @@ development version. See [versioning](docs/VERSIONING.md).
 ```sh
 cargo test --workspace                       # unit tests, including device-driver logic
 cargo build --release -p kb-desktop
-scripts/desktop-regression.sh                # 67 desktop scenarios with screenshots (--network adds live sites)
+scripts/desktop-regression.sh                # 86 desktop scenarios with screenshots (--network adds live sites)
 scripts/launcher-stub-test.sh                # 10 launcher checks with stub commands
 scripts/test-all.sh                          # every check, with evidence in artifacts/REPORT.md
 ```

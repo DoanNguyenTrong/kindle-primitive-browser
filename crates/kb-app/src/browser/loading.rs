@@ -23,6 +23,16 @@ pub(super) fn load_reason(err: &str) -> String {
     }
 }
 
+/// The address without its fragment: the document an address belongs to.
+pub(super) fn document_of(url: &str) -> String {
+    url.split('#').next().unwrap_or(url).to_string()
+}
+
+/// The host name of an address, or an empty string.
+pub(super) fn host_of(url: &str) -> String {
+    url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_string)).unwrap_or_default()
+}
+
 impl Browser {
     /// POST a form and show the response, with the same progress and cancel behaviour as a GET.
     pub(super) fn post_document(
@@ -34,7 +44,7 @@ impl Browser {
         self.keyboard = false;
         self.sheet = None;
         self.chrome = true;
-        self.page_dirty = true;
+        self.mark_page_dirty();
         let u = url.to_string();
         let outcome = self.run_job(move || kb_net::post_form(&u, &fields, MAX_DOC_BYTES))?;
         match outcome {
@@ -63,7 +73,7 @@ impl Browser {
         self.keyboard = false;
         self.sheet = None;
         self.chrome = true;
-        self.page_dirty = true;
+        self.mark_page_dirty();
         // Show the address bar with the new URL (and the progress strip under it) before waiting,
         // even when the bars were hidden by scrolling. Otherwise the strip lands on page content.
         self.touch(0, self.height, Wave::Text);
@@ -133,15 +143,20 @@ impl Browser {
         }
         self.follow_script_navigation();
         self.save_session();
-        // A finished page gets one full refresh: the panel then shows the whole page cleanly.
-        self.touch(0, self.height, Wave::Flash);
+        // A finished page gets one full refresh (clears the previous page's ghosting), unless the reader turned it off.
+        let refresh = if self.settings.flash_on_load { Wave::Flash } else { Wave::Text };
+        self.touch(0, self.height, refresh);
         Ok(())
     }
 
     /// Build the page, waiting for resources with progress. Images are deferred.
     pub(super) fn build_page(&mut self, html: &str, base: &str, is_web: bool) {
         let source = html.to_string();
-        let prepared = prepare_html(html, &self.settings);
+        self.find_matches.clear();
+        self.page_url = base.to_string();
+        // Web pages show alt text in place of images when images are off; browser pages keep their images.
+        let scripts = !is_web || !crate::storage::scripts_off(&host_of(base));
+        let prepared = prepare_html(html, &self.settings, is_web && !self.settings.images, scripts);
         // Stylesheets for print or the dark scheme are not applied to this screen.
         let prepared = if is_web { crate::html::drop_unmatched_stylesheet_links(&prepared) } else { prepared };
         let html = prepared.as_str();
@@ -198,6 +213,22 @@ impl Browser {
     /// meta-refresh redirect: load that address in place of this one. Returns true when it did. Up to
     /// five hops, so a redirect loop stops. A fragment-only change moves within the page instead.
     pub(super) fn follow_script_navigation(&mut self) -> bool {
+        // history.pushState/replaceState: show each new address in order, and keep the history entries current.
+        for (url, replace, state) in self.page.as_ref().map(|p| p.take_url_changes()).unwrap_or_default() {
+            self.url = url.clone();
+            self.pushed_states.insert(url.clone(), (document_of(&self.page_url), state));
+            if replace {
+                if let Some(last) = self.history.get_mut(self.idx) {
+                    *last = url;
+                }
+            } else {
+                // pushState adds an entry after the current one (dropping any forward entries), as browsers do.
+                self.history.truncate(self.idx + 1);
+                self.history.push(url);
+                self.idx = self.history.len() - 1;
+            }
+            self.save_session();
+        }
         if let Some(next) = self.page.as_mut().and_then(|p| p.take_navigation()) {
             self.pending_nav = Some(next);
         }

@@ -147,6 +147,7 @@ tapsel input[name=q]
 tapkey h
 tapkey i
 tapsel a[href=\"kb:go\"]
+tapsel button
 quit" "$BASE/search?q=hi"
 
 run form_post_submit "open $BASE/post.html
@@ -154,6 +155,7 @@ tapsel input[name=city]
 tapkey h
 tapkey i
 tapsel a[href=\"kb:go\"]
+tapsel button
 text p
 quit" "received | $BASE/submit" "POST city=hi"
 
@@ -165,7 +167,51 @@ tapkey c
 tapsel a[href=\"kb:left\"]
 tapkey x
 tapsel a[href=\"kb:go\"]
+tapsel button
 quit" "$BASE/search?q=abxc"
+
+# Checkboxes and radios toggle on tap; the password field is masked; the form sends only what is checked,
+# and readonly fields are sent while disabled ones are not.
+run forms_checkbox_radio_password "open $BASE/forms.html
+tapsel input[name=agree]
+tapsel input[name=news]
+tapsel input[value=l]
+tapsel input[name=pw]
+tapkey a
+tapkey b
+tapsel a[href=\"kb:go\"]
+text input[name=pw]
+scroll 600
+tapsel button
+quit" "news=on&size=l&pw=ab&rd=y"
+
+# Done ends a page field without sending the form. Disabled and read-only fields do not open the keyboard.
+run forms_done_and_disabled "open $BASE/forms.html
+tapsel input[name=dis]
+visible a[href=\"kb:go\"]
+tapsel input[name=rd]
+visible a[href=\"kb:go\"]
+tapsel input[name=pw]
+visible a[href=\"kb:go\"]
+tapkey q
+tapsel a[href=\"kb:go\"]
+visible a[href=\"kb:go\"]
+quit" "[visible] a[href=\"kb:go\"]: 0" "[visible] a[href=\"kb:go\"]: 1"
+
+# Find in page: the menu's Find opens the keyboard; Find scrolls to the match, which was off screen.
+run find_in_page "open $BASE/find.html
+visible p[id=\"needle\"]
+action menu
+tapsel a[href=\"kb:find\"]
+tapkey n
+tapkey e
+tapkey e
+tapkey d
+tapkey l
+tapkey e
+tapsel a[href=\"kb:go\"]
+visible p[id=\"needle\"]
+quit" "[visible] p[id=\"needle\"]: 0" "[visible] p[id=\"needle\"]: 1"
 
 # --- DOM and JavaScript APIs ------------------------------------------------------
 run dom_apis "open $BASE/dom.html
@@ -175,6 +221,85 @@ quit" "byClass:2" "cl:true" "data:main" "closest:box"
 run js_platform_apis "open $BASE/apis.html
 text #out
 quit" "load fired" "abort:true" "uuid:36" "url:example.org/a/b:two" "b64:aGk=/hi"
+
+run web_apis_media_and_xhr "open $BASE/web_apis.html
+text #out
+quit" "media:false,true,true,true,true" "xhr:200:true:4"
+
+run mutation_observer_records "open $BASE/mutation.html
+text #out
+quit" "mut:attr:class,child:1/0"
+
+# Scripts per site: the Display sheet turns them off for this site; the page then shows its noscript text.
+run scripts_off_per_site "open $BASE/scripts.html
+text #out
+action menu
+tapsel a[href=\"kb:display\"]
+tapsel a[href=\"kb:scripts:off\"]
+text #out
+text #ns
+quit" "[text] #out: scripts ran" "[text] #out: waiting" "[text] #ns: Turn scripts on to see this."
+
+# Select lists: a tap opens the options; the chosen one is sent with the form; disabled selects are not sent.
+run select_choose_and_submit "open $BASE/select.html
+tapsel select[name=color]
+tapsel a[href=\"kb:pick:2\"]
+tapsel button
+quit" "$BASE/search?color=blue"
+
+run select_default_is_marked_option "open $BASE/select.html
+tapsel button
+quit" "$BASE/search?color=green"
+
+# Events: committing a field fires input and change; a script can cancel the submit event, so the form is not sent.
+run form_events_input_change_submit "open $BASE/events.html
+tapsel input[name=q]
+tapkey a
+tapsel a[href=\"kb:go\"]
+text #out
+tapsel button
+text #out
+quit" "[text] #out: input:1 change:1" "[text] #out: submit blocked:1"
+
+# history.pushState changes the address shown without loading a new page.
+run history_push_state_changes_address "open $BASE/push.html
+text #out
+assert url $BASE/push/two
+back
+text #out
+assert url $BASE/push/one
+quit" "[text] #out: path:/push/two state:2" "[assert] url $BASE/push/two: PASS" "[text] #out: popstate step 1" "[assert] url $BASE/push/one: PASS"
+
+# Offline copy: the saved page keeps its image and its heading, and its script is left out.
+run offline_copy_keeps_assets_drops_scripts "open $BASE/archive.html
+action save
+open kbp://saved
+tapsel a[href^=\"kbp://saved/\"]
+text h1
+count img
+quit" "[text] h1: Archive fixture" "[count] img: 1"
+
+# setInterval fires a bounded number of times while the page settles; clearInterval stops one.
+run set_interval_bounded_and_cancellable "open $BASE/interval.html
+text #out
+quit" "[text] #out: ticks:3"
+
+# Check SSH reads the server state; off the Kindle it reports that there is nothing to check.
+run ssh_check_off_kindle "open kbp://home
+action menu
+tapsel a[href=\"kbp://diagnostics\"]
+tapsel a[href=\"kb:ssh:check\"]
+quit" "[fix] Check SSH: status Some(0), timed out false" "[fix]   not a Kindle: nothing to check"
+
+# The Display sheet holds the e-ink refresh choices: page waveform, bars and taps, flash on load, and a refresh.
+run display_refresh_choices "open $BASE/plain.html
+action menu
+tapsel a[href=\"kb:display\"]
+tapsel a[href=\"kb:wave:page:REAGL\"]
+tapsel a[href=\"kb:wave:ui:GL16\"]
+tapsel a[href=\"kb:wave:flash:off\"]
+tapsel a[href=\"kb:refresh\"]
+quit" "[ui] action kb:wave:page:REAGL" "[ui] action kb:wave:ui:GL16" "[ui] action kb:wave:flash:off" "[ui] action kb:refresh"
 
 # --- reading, saving, bookmarks, tabs ---------------------------------------------
 run reading_view "open $BASE/article.html
@@ -323,12 +448,13 @@ quit" "[shot] L06-address-suggestions-scrolled" "[shot] L07-address-filtered"
 SEED=
 
 # Saved pages load their own scripts and stylesheets from the original address.
-run saved_page_runs_its_scripts "open $BASE/external.html
+# An offline copy keeps the page's text but not its scripts: the script's effect is not in the copy.
+run saved_page_has_no_scripts "open $BASE/external.html
 action save
 action saved
 tapsel a[href^=\"kbp://saved/\"]
 text #out
-quit" "[text] #out: script ran from /external.html"
+quit" "[text] #out: script not run"
 
 # A saved page restored with Back still resolves its relative links against the original address.
 run saved_page_links_after_restore "open $BASE/external.html
@@ -493,14 +619,15 @@ tapsel a[href=\"kb:closemenu\"]
 quit" "a[href=\"kb:night\"]: not found" "a[href=\"kb:closemenu\"]: not found"
 
 # Images: a switch in the menu. Off skips image requests (no network, no decode); on fetches them.
-run images_on_by_default "open $BASE/images.html
+run images_off_by_default_show_alt_text "open $BASE/images.html
 count img
-quit" "[count] img: 1"
+count .kb-alt
+quit" "[count] img: 0" "[count] .kb-alt: 1"
 
-run images_off_skips_fetch "open $BASE/images.html
+run images_turned_on_fetch_them "open $BASE/images.html
 action images
 count img
-quit" "[ui] action kb:images" "[net] image skipped (images off)"
+quit" "[ui] action kb:images" "[count] img: 1"
 
 run menu_images_row_keeps_sheet "open $BASE/images.html
 action menu
@@ -766,6 +893,38 @@ quit" "news.ycombinator.com"
     run wikipedia_article "open https://en.wikipedia.org/wiki/E-paper
 count h1
 quit" "Electronic paper"
+
+    # Site matrix (docs/SITE-MATRIX.md): ten real sites, each checked by its page title.
+    run matrix_gutenberg_book "open https://www.gutenberg.org/ebooks/1342
+text title
+quit" "Pride and Prejudice"
+    run matrix_python_docs "open https://docs.python.org/3/library/functools.html
+text title
+quit" "functools"
+    run matrix_mdn_javascript "open https://developer.mozilla.org/en-US/docs/Web/JavaScript
+text title
+quit" "JavaScript"
+    run matrix_github_repo "open https://github.com/rust-lang/rust
+text title
+quit" "rust-lang/rust"
+    run matrix_duckduckgo "open https://html.duckduckgo.com/html/?q=kindle
+text title
+quit" "kindle"
+    run matrix_bbc_news "open https://www.bbc.com/news
+text title
+quit" "BBC"
+    run matrix_lobsters "open https://lobste.rs/
+text title
+quit" "Lobsters"
+    run matrix_stackoverflow "open https://stackoverflow.com/questions/11227809
+text title
+quit" "processing a sorted array"
+    run matrix_wikipedia_kindle "open https://en.wikipedia.org/wiki/Amazon_Kindle
+text title
+quit" "Kindle"
+    run matrix_hacker_news_front "open https://news.ycombinator.com/
+text title
+quit" "Hacker News"
 fi
 
 write_index

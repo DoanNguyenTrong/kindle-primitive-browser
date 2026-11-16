@@ -54,6 +54,8 @@ pub(super) enum Sheet {
     Menu,
     Tabs,
     Display,
+    /// The options of a page's select, to choose one.
+    Choice,
 }
 
 #[derive(Clone, Default, Debug)]

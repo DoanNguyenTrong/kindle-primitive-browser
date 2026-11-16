@@ -173,7 +173,7 @@ impl Browser {
         };
         let outcome = page.click_at(x, y);
         if outcome == kb_engine::ClickKind::Prevented {
-            self.page_dirty = true;
+            self.mark_page_dirty();
             self.touch(0, self.height, Wave::Text);
             return;
         }
@@ -181,13 +181,28 @@ impl Browser {
         if self.follow_script_navigation() {
             return;
         }
+        // Checkboxes and radio buttons change state on tap.
+        if self.page.as_mut().map_or(false, |p| p.toggle_choice_at(x, y)) {
+            self.mark_page_dirty();
+            self.touch(0, self.height, Wave::Text);
+            return;
+        }
+        // A select opens its options in a sheet.
+        if let Some(select) = self.page.as_ref().and_then(|p| p.select_at(x, y)) {
+            self.choice_title = select.title;
+            self.choice_options = select.options;
+            self.choice_key = Some(select.key);
+            self.show_sheet(Sheet::Choice);
+            return;
+        }
         // Text fields open the keyboard for editing; submit buttons send their form.
         let field = self.page.as_ref().and_then(|p| p.input_at(x, y));
-        if let Some((key, value)) = field {
-            self.input_target = Some(key);
+        if let Some(field) = field {
+            self.input_target = Some(field.key);
+            self.masked = field.password;
             self.keyboard = true;
             self.sheet = None;
-            self.typed = value.chars().collect();
+            self.typed = field.value.chars().collect();
             self.caret = self.typed.len();
             self.layer = Layer::Lower;
             self.refresh_suggestions();
@@ -195,7 +210,13 @@ impl Browser {
             return;
         }
         if let Some(submit) = self.page.as_ref().and_then(|p| p.form_submit_at(x, y)) {
-            self.submit(submit);
+            // A script may cancel the submit event; then the form is not sent.
+            if self.page.as_mut().map_or(true, |p| p.form_submit_allowed(x, y)) {
+                self.submit(submit);
+            } else {
+                self.mark_page_dirty();
+                self.touch(0, self.height, Wave::Text);
+            }
             return;
         }
         let href = self.page.as_ref().and_then(|p| p.link_at(x, y));
@@ -209,7 +230,7 @@ impl Browser {
             }
         }
         if outcome != kb_engine::ClickKind::None {
-            self.page_dirty = true;
+            self.mark_page_dirty();
             self.touch(0, self.height, Wave::Text);
         }
     }
@@ -218,7 +239,7 @@ impl Browser {
         if self.chrome != visible {
             self.chrome = visible;
             // The page moves below the address bar when the bars are shown, so repaint it at text quality.
-            self.page_dirty = true;
+            self.mark_page_dirty();
             self.touch(0, self.height, Wave::Text);
         }
     }

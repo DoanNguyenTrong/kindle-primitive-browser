@@ -1,0 +1,17 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Mutation test</title>
+<style>body{font-family:sans-serif;font-size:34px;padding:150px 30px}</style></head>
+<body><div id="box"></div><p id="out">waiting</p>
+<script>
+var seen = [];
+var box = document.getElementById('box');
+var mo = new MutationObserver(function (records) {
+  for (var i = 0; i < records.length; i++) {
+    var r = records[i];
+    seen.push(r.type === 'attributes' ? 'attr:' + r.attributeName : 'child:' + r.addedNodes.length + '/' + r.removedNodes.length);
+  }
+  document.getElementById('out').textContent = 'mut:' + seen.join(',');
+});
+mo.observe(box, { childList: true, attributes: true });
+box.setAttribute('class', 'on');
+box.appendChild(document.createElement('span'));
+</script></body></html>

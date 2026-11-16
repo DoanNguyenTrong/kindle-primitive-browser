@@ -3,7 +3,7 @@
 //!
 //! Files (all under /mnt/us/browser):
 //!   start.txt  optional start URL (default: Hacker News)
-//!   frame.png  last frame, for debugging
+//!   /var/tmp/kb-frame.bmp  last frame, for debugging (RAM, not kept across restarts)
 //!   log         written by the launcher (stderr)
 
 use std::{
@@ -24,15 +24,16 @@ use std::{
 };
 
 mod device;
+mod profile;
 
-use kb_app::{encode_png, Browser, Update, Wave, PROGRESS_H, TOP_H};
+use kb_app::{Browser, Update, Wave, PROGRESS_H, TOP_H};
 
 const DIR: &str = "/mnt/us/browser";
 const FBINK: &str = "/mnt/us/libkh/bin/fbink";
 /// The panel's native frame: upright portrait. The touch controller always reports in this frame,
 /// whichever way the Kindle is turned, so touches are turned into the screen's frame here.
-const NATIVE_W: u32 = 1264;
-const NATIVE_H: u32 = 1680;
+const NATIVE_W: u32 = profile::ACTIVE.screen_w;
+const NATIVE_H: u32 = profile::ACTIVE.screen_h;
 
 /// The turn of the Kindle: 0 upright, 2 upside down (the left-handed portrait). The Kindle has no
 /// landscape, so the browser always draws the portrait screen.
@@ -54,7 +55,6 @@ fn page_buttons_swapped(rota: u32) -> bool {
     rota == 2
 }
 /// Full-screen flash every N partial refreshes, to clear e-ink ghosting.
-const FLASH_EVERY: u32 = 8;
 
 const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;
@@ -63,8 +63,8 @@ const SYN_REPORT: u16 = 0x00;
 const ABS_MT_POSITION_X: u16 = 0x35;
 const ABS_MT_POSITION_Y: u16 = 0x36;
 const ABS_MT_TRACKING_ID: u16 = 0x39;
-const KEY_PAGEUP: u16 = 104;
-const KEY_PAGEDOWN: u16 = 109;
+const KEY_PAGEUP: u16 = profile::ACTIVE.page_back_key;
+const KEY_PAGEDOWN: u16 = profile::ACTIVE.page_forward_key;
 
 /// The turn the framebuffer is drawn in, from FBInk's state (`fbink -e` prints `currentRota=N`): 0 upright,
 /// 2 upside down. The screen's own direction, so the controls follow what the reader sees, not the
@@ -323,8 +323,10 @@ fn read_event(file: &mut File) -> Option<InputEvent> {
 /// Drawing to the panel. Regions are cropped to the rows that changed, and the
 /// waveform follows the kind of change (fast for chrome, text quality for pages).
 struct Display {
-    text_frames: u32,
     last_progress: Instant,
+    /// The e-ink waveforms chosen in the browser's Display sheet.
+    page_wave: String,
+    ui_wave: String,
 }
 
 impl Display {
@@ -333,20 +335,14 @@ impl Display {
         if y1 <= y0 {
             return;
         }
-        let mut flash = u.wave == Wave::Flash;
-        if u.wave == Wave::Text {
-            self.text_frames += 1;
-            // Periodic full flash clears ghosting left by partial updates.
-            if self.text_frames % FLASH_EVERY == 0 {
-                flash = true;
-            }
-        }
+        let flash = u.wave == Wave::Flash;
+        // A full flash is always GC16. Otherwise the reader's own choice: page content and bars/taps.
         let wave = if flash {
             "GC16"
         } else {
             match u.wave {
-                Wave::Fast => "DU",
-                _ => "GL16",
+                Wave::Fast => self.ui_wave.as_str(),
+                _ => self.page_wave.as_str(),
             }
         };
         let region = u.region();
@@ -371,14 +367,16 @@ impl Display {
     }
 }
 
+/// The frame file fbink reads. It lives in RAM (/var is tmpfs), so a page turn does not write to the
+/// storage partition. An 8-bit grayscale BMP needs no compression, which makes it much faster to produce
+/// than a PNG; fbink reads it directly.
+const FRAME_FILE: &str = "/var/tmp/kb-frame.bmp";
+
 /// Show `rows` rows of gray pixels at row `y` with the given fbink waveform.
 fn blit_region(width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) {
-    let png = match encode_png(width, rows, gray) {
-        Ok(p) => p,
-        Err(e) => return log(&format!("png: {e}")),
-    };
-    let path = format!("{DIR}/frame.png");
-    if let Err(e) = fs::write(&path, png) {
+    let bmp = gray_bmp(width, rows, gray);
+    let path = FRAME_FILE;
+    if let Err(e) = fs::write(path, bmp) {
         return log(&format!("write frame: {e}"));
     }
     let mut cmd = Command::new(FBINK);
@@ -392,6 +390,43 @@ fn blit_region(width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bo
         Ok(s) => log(&format!("fbink exit {s}")),
         Err(e) => log(&format!("fbink: {e}")),
     }
+}
+
+/// An 8-bit grayscale BMP of `width` x `rows` pixels. `gray` holds the rows top to bottom, one byte per pixel.
+/// The rows are stored bottom-up, as BMP files usually are, with each row padded to four bytes.
+fn gray_bmp(width: u32, rows: u32, gray: &[u8]) -> Vec<u8> {
+    let stride = (width as usize + 3) & !3;
+    let pixels = stride * rows as usize;
+    let palette = 256 * 4;
+    let offset = 14 + 40 + palette;
+    let size = offset + pixels;
+    let mut out = Vec::with_capacity(size);
+    // File header.
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(size as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&(offset as u32).to_le_bytes());
+    // Info header (BITMAPINFOHEADER).
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(rows as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&8u16.to_le_bytes());
+    out.extend_from_slice(&[0; 24]); // no compression, sizes and resolution left at zero
+    // Grey palette.
+    for v in 0..=255u8 {
+        out.extend_from_slice(&[v, v, v, 0]);
+    }
+    // Pixels, bottom row first.
+    let row_len = width as usize;
+    let padding = [0u8; 3];
+    for row in (0..rows as usize).rev() {
+        let start = row * row_len;
+        let line = gray.get(start..start + row_len).unwrap_or(&[]);
+        out.extend_from_slice(line);
+        out.extend_from_slice(&padding[..stride - line.len()]);
+    }
+    out
 }
 
 /// State shared by the input loop and the browser's progress pump.
@@ -414,7 +449,54 @@ fn rss_kb() -> u64 {
         .unwrap_or(0)
 }
 
+/// Writes a fatal signal's number and fault address to stderr (the browser log) before the process ends.
+/// Only `write(2)` is used here, which is safe inside a signal handler.
+extern "C" fn on_fatal(sig: libc::c_int, info: *mut libc::siginfo_t, _ctx: *mut libc::c_void) {
+    fn put(bytes: &[u8]) {
+        unsafe { libc::write(2, bytes.as_ptr() as *const libc::c_void, bytes.len()) };
+    }
+    fn hex(mut value: usize, out: &mut [u8; 18]) -> &[u8] {
+        let digits = b"0123456789abcdef";
+        let mut at = out.len();
+        loop {
+            at -= 1;
+            out[at] = digits[value & 15];
+            value >>= 4;
+            if value == 0 {
+                break;
+            }
+        }
+        out[at - 2] = b'0';
+        out[at - 1] = b'x';
+        &out[at - 2..]
+    }
+    let addr = if info.is_null() { 0 } else { unsafe { (*info).si_addr() as usize } };
+    let mut buf = [0u8; 18];
+    put(b"\n[crash] fatal signal ");
+    put(&[b'0' + (sig as u8 / 10), b'0' + (sig as u8 % 10)]);
+    put(b" at address ");
+    put(hex(addr, &mut buf));
+    put(b"\n");
+    // Restore the default action and raise it again, so the process ends as it would have.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
+    }
+}
+
+fn install_crash_log() {
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_fatal as *const () as usize;
+        action.sa_flags = libc::SA_SIGINFO;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGBUS, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGSEGV, &action, std::ptr::null_mut());
+    }
+}
+
 fn main() {
+    install_crash_log();
     log("start");
     let start = fs::read_to_string(format!("{DIR}/start.txt"))
         .ok()
@@ -423,7 +505,7 @@ fn main() {
         .unwrap_or_else(|| "kbp://home".into());
 
     let (tx, rx) = channel();
-    if let Some(path) = find_input("cyttsp") {
+    if let Some(path) = find_input(profile::ACTIVE.touch_name) {
         let t = tx.clone();
         thread::spawn(move || touch_loop(path, t));
     } else {
@@ -439,7 +521,7 @@ fn main() {
     let shared = Rc::new(RefCell::new(Shared {
         rx,
         pending: VecDeque::new(),
-        display: Display { text_frames: 0, last_progress: Instant::now() - Duration::from_secs(1) },
+        display: Display { last_progress: Instant::now() - Duration::from_secs(1), page_wave: "GC16".into(), ui_wave: "DU".into() },
     }));
 
     // While a page loads, the progress strip is drawn and any tap cancels the wait,
@@ -482,6 +564,13 @@ fn main() {
     log(&format!("ready in {:?}: {}", t0.elapsed(), b.url()));
 
     loop {
+        // The waveforms the reader chose in its Display sheet (they can change between events).
+        {
+            let (page, ui) = b.wave_names();
+            let mut s = shared.borrow_mut();
+            s.display.page_wave = page;
+            s.display.ui_wave = ui;
+        }
         let next = shared.borrow_mut().pending.pop_front();
         let ev = match next {
             Some(ev) => ev,
@@ -543,7 +632,31 @@ fn main() {
             break;
         }
     }
+    // Shutdown in steps, so a crash in the last one shows which step it was.
+    log("closing: dropping the browser");
+    drop(b);
+    log("closing: browser dropped");
+    drop(shared);
     log("bye");
+}
+
+#[cfg(test)]
+mod bmp_tests {
+    use super::*;
+
+    #[test]
+    fn gray_bmp_has_the_right_size_and_rows_bottom_up() {
+        // 3 pixels wide: each row is padded to 4 bytes. Row 0 (top) is 1 2 3, row 1 is 4 5 6.
+        let bmp = gray_bmp(3, 2, &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(&bmp[0..2], b"BM");
+        let offset = u32::from_le_bytes(bmp[10..14].try_into().unwrap()) as usize;
+        assert_eq!(offset, 14 + 40 + 1024);
+        assert_eq!(bmp.len(), offset + 8);
+        assert_eq!(u32::from_le_bytes(bmp[2..6].try_into().unwrap()) as usize, bmp.len());
+        assert_eq!(&bmp[offset..offset + 4], &[4, 5, 6, 0]);
+        assert_eq!(&bmp[offset + 4..offset + 8], &[1, 2, 3, 0]);
+        assert_eq!(u16::from_le_bytes(bmp[28..30].try_into().unwrap()), 8);
+    }
 }
 
 #[cfg(test)]

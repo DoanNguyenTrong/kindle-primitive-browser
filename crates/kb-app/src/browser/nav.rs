@@ -54,6 +54,22 @@ impl Browser {
     pub(super) fn load_history_entry(&mut self, prev: usize) {
         let url = self.history[self.idx].clone();
         let saved = self.scrolls.get(self.idx).copied().unwrap_or(0.0);
+        // An entry that pushState created on the page still loaded: no reload, just popstate with its state.
+        if let Some((doc, state)) = self.pushed_states.get(&url).cloned() {
+            if self.page.is_some() && doc == super::loading::document_of(&self.page_url) {
+                self.url = url.clone();
+                if let Some(page) = self.page.as_mut() {
+                    page.set_location(&url);
+                    page.pop_state(&state);
+                    page.scroll_to(saved);
+                }
+                self.mark_page_dirty();
+                self.keyboard = false;
+                self.sheet = None;
+                self.touch(0, self.height, Wave::Text);
+                return;
+            }
+        }
         if self.page.is_some() && same_document(&self.url, &url) && self.url != url {
             self.show_fragment(&url);
             if let Some(page) = self.page.as_mut() {
@@ -91,7 +107,7 @@ impl Browser {
         self.keyboard = false;
         self.sheet = None;
         self.chrome = true;
-        self.page_dirty = true;
+        self.mark_page_dirty();
         self.touch(0, self.height, Wave::Text);
     }
 
@@ -158,7 +174,7 @@ impl Browser {
         self.sheet = None;
         self.chrome = true;
         self.reader = self.reader_source.is_some();
-        self.page_dirty = true;
+        self.mark_page_dirty();
         self.touch(0, self.height, Wave::Text);
         true
     }
@@ -203,7 +219,7 @@ impl Browser {
         if let Some(page) = self.page.as_mut() {
             page.scroll_to(scroll);
         }
-        self.page_dirty = true;
+        self.mark_page_dirty();
         self.touch(0, self.height, Wave::Text);
     }
 

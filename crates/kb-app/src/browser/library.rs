@@ -36,8 +36,18 @@ impl Browser {
         }
         let key = format!("{:016x}", fnv(&self.url));
         let dir = data_file("saved");
-        let _ = fs::create_dir_all(&dir);
-        let _ = fs::write(dir.join(format!("{key}.html")), &self.source);
+        // The copy keeps the page's stylesheets and images (budget 6 MB) and drops its scripts.
+        let archived = crate::archive::archive_html(
+            &self.source,
+            &self.url,
+            &mut |u| kb_net::fetch(u, 4 * 1024 * 1024).ok().map(|f| (f.content_type, f.body)),
+            6 * 1024 * 1024,
+        );
+        if crate::storage::write_atomic(&dir.join(format!("{key}.html")), archived.as_bytes()).is_err() {
+            // The device may be full or read-only: say so, rather than list a page that was not kept.
+            self.notify("Could not save this page: the storage did not accept it");
+            return;
+        }
         let mut index = read_pairs(&data_file("saved.tsv"));
         index.retain(|(k, _)| *k != key);
         index.push((key, format!("{} {}", self.url, self.title())));

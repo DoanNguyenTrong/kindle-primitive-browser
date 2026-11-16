@@ -32,7 +32,7 @@ pub(super) fn char_key(c: char) -> Key {
     key(&c.to_string(), &format!("kb:c:{}", c as u32), 1.0)
 }
 
-pub(crate) fn keyboard_rows(layer: Layer) -> Vec<Vec<Key>> {
+pub(crate) fn keyboard_rows(layer: Layer, go: &str) -> Vec<Vec<Key>> {
     let up = layer == Layer::Upper;
     let letters = |s: &str| -> Vec<Key> {
         s.chars()
@@ -48,7 +48,7 @@ pub(crate) fn keyboard_rows(layer: Layer) -> Vec<Vec<Key>> {
             key(".", "kb:c:46", 1.0),
             Key {
                 class: "go",
-                ..key("Go", "kb:go", 1.5)
+                ..key(go, "kb:go", 1.5)
             },
         ]
     };
@@ -108,6 +108,8 @@ impl Browser {
 
     pub(super) fn enter_keyboard(&mut self) {
         self.password_entry = false;
+        self.find_entry = false;
+        self.masked = false;
         self.keyboard = true;
         self.sheet = None;
         self.input_target = None;
@@ -196,7 +198,9 @@ impl Browser {
                 "kb:cancel" => {
                     self.keyboard = false;
                     self.input_target = None;
+                    self.masked = false;
                     self.password_entry = false;
+                    self.find_entry = false;
                     self.typed.clear();
                     self.touch(0, self.height, Wave::Text);
                     return;
@@ -210,19 +214,19 @@ impl Browser {
                         self.set_ssh_password(&text);
                         return;
                     }
+                    if self.find_entry {
+                        self.find_entry = false;
+                        self.run_find(&text);
+                        return;
+                    }
                     if let Some(key) = self.input_target.take() {
-                        // Editing a page field: write the value back, submit its form if it has one.
-                        let form = self
-                            .page
-                            .as_mut()
-                            .and_then(|p| p.set_input_value(key, &text));
-                        match form {
-                            Some(submit) => self.submit(submit),
-                            None => {
-                                self.page_dirty = true;
-                                self.touch(0, self.height, Wave::Text);
-                            }
+                        // Done: write the value back into the field. The form is sent by its own submit button.
+                        self.masked = false;
+                        if let Some(page) = self.page.as_mut() {
+                            page.set_input_value(key, &text);
                         }
+                        self.mark_page_dirty();
+                        self.touch(0, self.height, Wave::Text);
                     } else if !text.trim().is_empty() {
                         self.open(&text);
                     } else {
@@ -250,7 +254,7 @@ impl Browser {
     /// `SUGGESTION_LIMIT`; the list scrolls, so a long history stays reachable.
     pub(super) fn refresh_suggestions(&mut self) {
         const SUGGESTION_LIMIT: usize = 60;
-        if self.password_entry {
+        if self.password_entry || self.find_entry {
             self.suggestions.clear();
             return;
         }
@@ -279,7 +283,7 @@ impl Browser {
     /// The address bar layer, shown above the suggestions while the keyboard is open.
     pub(super) fn ensure_field(&mut self) -> &mut Cached {
         // A password is shown as stars, and its text never becomes part of the cache key.
-        let (shown, key): (Vec<char>, String) = if self.password_entry {
+        let (shown, key): (Vec<char>, String) = if self.password_entry || self.masked {
             let stars = vec!['*'; self.typed.len()];
             let key = format!("pw:{}|{}|{}", self.typed.len(), self.caret, self.select_all);
             (stars, key)
@@ -309,10 +313,29 @@ impl Browser {
         self.suggest.as_mut().expect("suggestion layer")
     }
 
+    /// What the Go key says: Done ends a page field (its form is not submitted), Set ends the SSH password.
+    pub(super) fn go_label(&self) -> &'static str {
+        if self.password_entry {
+            "Set"
+        } else if self.find_entry {
+            "Find"
+        } else if self.input_target.is_some() {
+            "Done"
+        } else {
+            "Go"
+        }
+    }
+
     pub(super) fn ensure_key(&mut self, layer: Layer) -> &mut Cached {
+        let label = self.go_label();
+        if self.keys_label != label {
+            // The key layers were drawn with another label: draw them again.
+            self.keys = [None, None, None, None];
+            self.keys_label = label;
+        }
         let idx = layer as usize;
         if self.keys[idx].is_none() {
-            let html = ui::keyboard_for(layer, self.height - self.kb_y());
+            let html = ui::keyboard_for(layer, self.go_label(), self.height - self.kb_y());
             let c = self.render_layer(&html, "kb://keyboard/", self.width, self.height - self.kb_y());
             self.keys[idx] = Some(c);
         }

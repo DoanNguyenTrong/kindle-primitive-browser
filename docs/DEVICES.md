@@ -52,7 +52,7 @@ hardware. They are not guessed.
 
 Each step is testable on the desktop build before a Kindle is involved.
 
-1. **Device profile (M1).** One table of per-model values in `kb-kindle`: screen size, touch name,
+1. **Device profile (M1).** Status: the per-model values are in one table, `crates/kb-kindle/src/profile.rs`, with the Oasis 3 as the only entry (values unchanged and pinned by a test). Still to do: detect the model, and add the other models' values from their devices. One table of per-model values in `kb-kindle`: screen size, touch name,
    page-button codes, power-supply paths, frontlight range, and the framework init type. Detect the
    model at start from the device, and fall back to the Oasis 3 profile only when it matches.
    The current Oasis 3 values stay as the default profile.

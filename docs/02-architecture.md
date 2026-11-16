@@ -1,6 +1,6 @@
 # 2. System architecture
 
-Released baseline 0.1.0, including the Unreleased navigation milestone. This describes the working tree. Requirements it serves are in
+Latest release: 0.2.1 (2026-11-17). This describes the working tree. Requirements it serves are in
 [01-requirements.md](01-requirements.md).
 
 ## 2.1 Overview

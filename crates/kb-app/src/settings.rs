@@ -27,7 +27,19 @@ pub(crate) struct Settings {
     pub(crate) home_recent_open: bool,
     /// Whether images are fetched and drawn. Off saves memory and bandwidth for text reading.
     pub(crate) images: bool,
+    /// The e-ink waveform for page content (page turns, loads). One of `PAGE_WAVES`.
+    pub(crate) page_wave: String,
+    /// The waveform for bars, taps and the keyboard. One of `UI_WAVES`.
+    pub(crate) ui_wave: String,
+    /// Whether a finished page gets a full flash (clears ghosting from the previous page).
+    pub(crate) flash_on_load: bool,
 }
+
+/// Page waveforms the Display sheet offers (fbink names). AUTO is the default: it is what the Kindle's own reader
+/// sends (partial updates with the driver choosing the waveform, measured in the e-ink driver's log).
+pub const PAGE_WAVES: [&str; 5] = ["AUTO", "GC16", "GL16", "REAGL", "DU"];
+/// Waveforms for bars and taps.
+pub const UI_WAVES: [&str; 2] = ["DU", "GL16"];
 
 impl Default for Settings {
     fn default() -> Self {
@@ -37,7 +49,10 @@ impl Default for Settings {
             page_width: DEFAULT_PAGE_WIDTH,
             home_bookmarks_open: true,
             home_recent_open: true,
-            images: true,
+            images: false,
+            page_wave: "AUTO".to_string(),
+            ui_wave: "DU".to_string(),
+            flash_on_load: false,
         }
     }
 }
@@ -65,7 +80,10 @@ impl Settings {
             },
             home_bookmarks_open: flag("home_bookmarks_open", true),
             home_recent_open: flag("home_recent_open", true),
-            images: flag("images", true),
+            images: flag("images", false),
+            page_wave: get("page_wave").filter(|w| PAGE_WAVES.contains(&w.as_str())).unwrap_or_else(|| "AUTO".to_string()),
+            ui_wave: get("ui_wave").filter(|w| UI_WAVES.contains(&w.as_str())).unwrap_or_else(|| "DU".to_string()),
+            flash_on_load: flag("flash_on_load", false),
         }
     }
 
@@ -83,6 +101,9 @@ impl Settings {
                 ),
                 ("home_recent_open".to_string(), flag(self.home_recent_open)),
                 ("images".to_string(), flag(self.images)),
+                ("page_wave".to_string(), self.page_wave.clone()),
+                ("ui_wave".to_string(), self.ui_wave.clone()),
+                ("flash_on_load".to_string(), flag(self.flash_on_load)),
             ],
         );
     }

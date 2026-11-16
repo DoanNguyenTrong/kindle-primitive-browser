@@ -8,6 +8,7 @@
 //! page; http(s) is a normal navigation.
 
 mod addr;
+mod archive;
 mod brand;
 mod device;
 mod browser;

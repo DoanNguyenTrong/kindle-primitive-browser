@@ -21,6 +21,7 @@ use crate::storage::*;
 
 mod actions;
 mod diagnostics;
+mod find;
 mod driver;
 mod frame;
 mod input;
@@ -71,6 +72,9 @@ pub struct Browser {
     previous: Option<PreviousPage>,
     /// URL of the page on screen (to tell it apart from the previous one).
     page_url: String,
+    /// Rendered screens of the page, by (scroll position, chrome offset). Cleared when the content changes;
+    /// filled while idle with the screen after the current one, so a page turn copies it instead of painting.
+    page_cache: Vec<((u64, u32), Vec<u8>)>,
     toast: Option<(String, Instant)>,
     toast_cache: Option<(String, Vec<u8>)>,
 
@@ -86,6 +90,22 @@ pub struct Browser {
     field: Option<Cached>,
     suggest: Option<Cached>,
     keys: [Option<Cached>; 4],
+    /// The label the key layers were drawn with (Go, Done or Set).
+    keys_label: &'static str,
+    /// The field being edited shows stars (a page password field).
+    masked: bool,
+    /// Entries that pushState created: the document they belong to, and the state pushed with them.
+    /// Going back to one of these on the same document fires popstate instead of loading the page again.
+    pushed_states: std::collections::HashMap<String, (String, String)>,
+    /// The find keyboard is open. The last query, its matches (device pixels) and the match shown.
+    find_entry: bool,
+    find_query: String,
+    find_matches: Vec<f64>,
+    find_index: usize,
+    /// The select being chosen from: its title, its options (label, selected) and its node key.
+    choice_title: String,
+    choice_options: Vec<(String, bool)>,
+    choice_key: Option<u64>,
 
     top: Option<Cached>,
     bottom: Option<Cached>,
@@ -152,6 +172,7 @@ impl Browser {
             settings: Settings::load(),
             previous: None,
             page_url: String::new(),
+            page_cache: Vec::new(),
             toast: None,
             toast_cache: None,
             keyboard: false,
@@ -163,6 +184,16 @@ impl Browser {
             field: None,
             suggest: None,
             keys: [None, None, None, None],
+            keys_label: "Go",
+            masked: false,
+            pushed_states: std::collections::HashMap::new(),
+            find_entry: false,
+            find_query: String::new(),
+            find_matches: Vec::new(),
+            find_index: 0,
+            choice_title: String::new(),
+            choice_options: Vec::new(),
+            choice_key: None,
             top: None,
             bottom: None,
             sheet_layer: None,

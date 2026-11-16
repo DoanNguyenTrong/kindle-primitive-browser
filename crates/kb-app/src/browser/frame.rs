@@ -46,9 +46,33 @@ impl Browser {
         kb_top(self.height)
     }
 
+    /// Render the screen after the current one while the reader is idle, so the next page turn copies it.
+    /// A scroll down hides the bars, so the screen is kept as it looks then.
+    pub(super) fn prefetch_next_screen(&mut self) {
+        if self.page_dirty || self.sheet.is_some() || self.keyboard || self.quick {
+            return;
+        }
+        let step = (self.height - TOP_H) as f64 * 0.9;
+        let Some(page) = self.page.as_mut() else { return };
+        let current = page.scroll_y();
+        let target = (current + step).min(page.max_scroll());
+        if target <= current {
+            return;
+        }
+        let key = (target.round() as u64, 0);
+        if self.page_cache.iter().any(|(k, _)| *k == key) {
+            return;
+        }
+        page.scroll_to(target);
+        let gray = page.render_gray_at(0);
+        page.scroll_to(current);
+        self.cache_screen(key, gray);
+    }
+
     /// Called regularly by the driver (on idle). Brings in held-back images and
     /// clears a notice when its time is up.
     pub fn tick(&mut self) -> Option<Update> {
+        self.prefetch_next_screen();
         let done = self
             .net
             .stats()
@@ -63,7 +87,7 @@ impl Browser {
             // The last image arriving ends the load: refresh the whole screen once, cleanly.
             let wave = if self.images_loading() { Wave::Text } else { Wave::Flash };
             self.touch(0, self.height, wave);
-            self.page_dirty = true;
+            self.mark_page_dirty();
             return Some(self.frame());
         }
         if let Some((_, until)) = &self.toast {
@@ -113,8 +137,11 @@ impl Browser {
             self.compose_browse()
         };
         if self.settings.night {
+            // Inverted: near-white page backgrounds become black, and very dark levels snap to pure black so the
+            // background is fully dark rather than a faint grey.
             for px in gray.iter_mut() {
-                *px = 255 - *px;
+                let inverted = 255 - *px;
+                *px = if inverted < 16 { 0 } else { inverted };
             }
         }
         self.last_gray = gray.clone();
@@ -125,6 +152,11 @@ impl Browser {
             rows,
             wave,
         }
+    }
+
+    /// The e-ink waveforms the reader chose: (page content, bars and taps).
+    pub fn wave_names(&self) -> (String, String) {
+        (self.settings.page_wave.clone(), self.settings.ui_wave.clone())
     }
 
     /// Push the current screen to the draw sink now (used while a load is still running).
@@ -138,12 +170,34 @@ impl Browser {
         }
     }
 
+    /// The page's content changed: the rendered screens are out of date.
+    pub(super) fn mark_page_dirty(&mut self) {
+        self.page_dirty = true;
+        self.page_cache.clear();
+    }
+
+    /// Keep a rendered screen; the cache holds the last few (a page turn needs the next one).
+    pub(super) fn cache_screen(&mut self, key: (u64, u32), gray: Vec<u8>) {
+        self.page_cache.retain(|(k, _)| *k != key);
+        self.page_cache.push((key, gray));
+        if self.page_cache.len() > 3 {
+            self.page_cache.remove(0);
+        }
+    }
+
     pub(super) fn compose_browse(&mut self) -> Vec<u8> {
         let want = self.page_offset();
         if self.page_dirty || self.page_gray.is_empty() || self.page_gray_offset != want {
-            self.page_gray = match self.page.as_mut() {
-                Some(p) => p.render_gray_at(want),
-                None => vec![255u8; (self.width * self.height) as usize],
+            let key = (self.page.as_ref().map_or(0, |p| p.scroll_y().round() as u64), want);
+            let cached = self.page_cache.iter().find(|(k, _)| *k == key).map(|(_, g)| g.clone());
+            self.page_gray = match (cached, self.page.as_mut()) {
+                (Some(gray), _) => gray,
+                (None, Some(p)) => {
+                    let gray = p.render_gray_at(want);
+                    self.cache_screen(key, gray.clone());
+                    gray
+                }
+                (None, None) => vec![255u8; (self.width * self.height) as usize],
             };
             self.page_gray_offset = want;
             self.page_dirty = false;
@@ -305,9 +359,16 @@ impl Browser {
             ),
             Sheet::Tabs => format!("tabs|{}|{:?}", self.active, tabs),
             Sheet::Display => format!(
-                "display|{}|{}|{}",
-                self.settings.text_pct, self.settings.page_width, self.settings.night
+                "display|{}|{}|{}|{}|{}|{}|{}",
+                self.settings.text_pct,
+                self.settings.page_width,
+                self.settings.night,
+                self.settings.page_wave,
+                self.settings.ui_wave,
+                self.settings.flash_on_load,
+                self.page_is_web && !crate::storage::scripts_off(&super::loading::host_of(&self.url))
             ),
+            Sheet::Choice => format!("choice|{}|{:?}", self.choice_title, self.choice_options),
         };
         if self.sheet_layer.as_ref().map_or(true, |c| c.key != key) {
             let html = match sheet {
@@ -319,10 +380,15 @@ impl Browser {
                     self.settings.images,
                 ),
                 Sheet::Tabs => ui::tabs(&tabs, self.active),
+                Sheet::Choice => ui::choice(&self.choice_title, &self.choice_options),
                 Sheet::Display => ui::display(
                     self.settings.text_pct,
                     self.settings.page_width,
                     self.settings.night,
+                    (self.page_is_web).then(|| !crate::storage::scripts_off(&super::loading::host_of(&self.url))),
+                    &self.settings.page_wave,
+                    &self.settings.ui_wave,
+                    self.settings.flash_on_load,
                 ),
             };
             let mut c =
@@ -342,11 +408,12 @@ impl Browser {
                 if self.tabs.len() == 1 { "tab" } else { "tabs" }
             ),
             Sheet::Display => "Display".to_string(),
+            Sheet::Choice => self.choice_title.clone(),
         };
         if self.sheet_header.as_ref().map_or(true, |c| c.key != title) {
             // Only the menu has a control in its title strip (Exit). Other sheets close by a tap on
             // the page above them.
-            let controls = if sheet == Sheet::Menu { ui::diagnostics_button() + &ui::exit_button() } else { String::new() };
+            let controls = if sheet == Sheet::Menu { ui::find_button() + &ui::diagnostics_button() + &ui::exit_button() } else { String::new() };
             let html = ui::sheet_header(&title, &controls);
             let mut c = self.render_layer(&html, "kb://chrome/", self.width, SHEET_TITLE_H);
             c.key = title;

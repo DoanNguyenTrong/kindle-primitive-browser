@@ -33,7 +33,7 @@ pub(crate) fn ensure_defaults() {
     if let Some(dir) = marker.parent() {
         let _ = fs::create_dir_all(dir);
     }
-    let _ = fs::write(&marker, "1\n");
+    let _ = write_atomic(&marker, b"1\n");
 }
 
 /// Saved-page metadata is `url title`. `write_pairs` turns tabs into spaces, so the separator is a
@@ -53,10 +53,33 @@ pub(crate) fn read_pairs(path: &PathBuf) -> Vec<(String, String)> {
         .collect()
 }
 
-pub(crate) fn write_pairs(path: &PathBuf, pairs: &[(String, String)]) {
+/// Write `bytes` to `path` without ever leaving a half-written file: the data goes to a temporary file
+/// beside it, is flushed to flash, and is then renamed over the old file. An interrupted write keeps the old
+/// contents. Failures are logged (the device log shows them) and returned.
+pub(crate) fn write_atomic(path: &PathBuf, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
     if let Some(dir) = path.parent() {
-        let _ = fs::create_dir_all(dir);
+        fs::create_dir_all(dir)?;
     }
+    let tmp = path.with_extension(match path.extension() {
+        Some(ext) => format!("{}.tmp", ext.to_string_lossy()),
+        None => "tmp".to_string(),
+    });
+    let result = (|| {
+        let mut file = fs::File::create(&tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        drop(file);
+        fs::rename(&tmp, path)
+    })();
+    if let Err(err) = &result {
+        eprintln!("[storage] could not write {}: {err}", path.display());
+        let _ = fs::remove_file(&tmp);
+    }
+    result
+}
+
+pub(crate) fn write_pairs(path: &PathBuf, pairs: &[(String, String)]) {
     let text: String = pairs
         .iter()
         .map(|(a, b)| {
@@ -67,7 +90,7 @@ pub(crate) fn write_pairs(path: &PathBuf, pairs: &[(String, String)]) {
             )
         })
         .collect();
-    let _ = fs::write(path, text);
+    let _ = write_atomic(path, text.as_bytes());
 }
 
 pub(crate) fn fnv(s: &str) -> u64 {
@@ -77,4 +100,63 @@ pub(crate) fn fnv(s: &str) -> u64 {
         h = h.wrapping_mul(0x0100_0000_01b3);
     }
     h
+}
+
+/// The sites whose scripts are off (one host per line in `scripts_off.txt`).
+fn scripts_off_list() -> Vec<String> {
+    fs::read_to_string(data_file("scripts_off.txt"))
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+/// Whether scripts are off for `host` (turned off for that site from the Display sheet).
+pub(crate) fn scripts_off(host: &str) -> bool {
+    scripts_off_list().iter().any(|h| h == host)
+}
+
+/// Turn scripts on or off for `host`.
+pub(crate) fn set_scripts_off(host: &str, off: bool) {
+    let mut hosts = scripts_off_list();
+    hosts.retain(|h| h != host);
+    if off {
+        hosts.push(host.to_string());
+    }
+    let path = data_file("scripts_off.txt");
+    if let Some(dir) = path.parent() {
+        let _ = fs::create_dir_all(dir);
+    }
+    let text: String = hosts.iter().map(|h| format!("{h}\n")).collect();
+    let _ = write_atomic(&path, text.as_bytes());
+}
+
+#[cfg(test)]
+mod atomic_tests {
+    use super::*;
+
+    #[test]
+    fn writes_replace_the_file_and_leave_no_temporary_file() {
+        let dir = std::env::temp_dir().join(format!("kb-atomic-{}", std::process::id()));
+        let path = dir.join("session.tsv");
+        write_atomic(&path, b"first").unwrap();
+        write_atomic(&path, b"second").unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "second");
+        assert!(!dir.join("session.tsv.tmp").exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_write_that_cannot_happen_reports_an_error_and_keeps_nothing_half_written() {
+        let dir = std::env::temp_dir().join(format!("kb-atomic-fail-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        // The parent of the target is a file, so no file can be created there.
+        let blocker = dir.join("blocker");
+        fs::write(&blocker, "x").unwrap();
+        let path = blocker.join("data.tsv");
+        assert!(write_atomic(&path, b"data").is_err());
+        assert!(!path.exists());
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

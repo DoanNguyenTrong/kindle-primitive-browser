@@ -46,6 +46,8 @@ pub(crate) enum Change {
     StartSsh,
     /// Stops the SSH server and every session it started.
     StopSsh,
+    /// Reads the SSH server's state: its process, whether port 2222 is listening, and the connect command.
+    CheckSsh,
 }
 
 /// Time allowed for a change. The copies are small, so this is generous.
@@ -58,6 +60,7 @@ impl Change {
             Change::RestoreDns => "Restore DNS",
             Change::StartSsh => "Start SSH",
             Change::StopSsh => "Stop SSH",
+            Change::CheckSsh => "Check SSH",
         }
     }
 
@@ -96,11 +99,24 @@ impl Change {
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
                 "elif [ -f /tmp/dropbear_koreader.pid ] && kill -0 $(cat /tmp/dropbear_koreader.pid) 2>/dev/null; then ",
                 "echo \"already running, pid $(cat /tmp/dropbear_koreader.pid)\"; ",
-                "else cd /mnt/us/koreader && ./dropbear -E -R -p 2222 -P /tmp/dropbear_koreader.pid; ",
+                "else mkdir -p /mnt/us/browser/ssh; [ $(wc -c < /mnt/us/browser/ssh/dropbear.log 2>/dev/null || echo 0) -gt 262144 ] && mv /mnt/us/browser/ssh/dropbear.log /mnt/us/browser/ssh/dropbear.log.old; ",
+                "echo \"started $(date)\" >> /mnt/us/browser/ssh/dropbear.log; ",
+                "cd /mnt/us/koreader && ./dropbear -E -R -p 2222 -P /tmp/dropbear_koreader.pid 2>>/mnt/us/browser/ssh/dropbear.log; ",
                 "echo \"dropbear status $?\"; sleep 1; ",
                 "if [ -f /tmp/dropbear_koreader.pid ]; then echo \"running, pid $(cat /tmp/dropbear_koreader.pid), port 2222\"; fi; fi; ",
                 "ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2); ",
                 "echo \"ssh -p 2222 root@${ip:-no-address}\""
+            ),
+            // Read only: the server process, the listening socket (port 2222 is 0x08AE in /proc/net/tcp, state 0A),
+            // and the address to connect to.
+            Change::CheckSsh => concat!(
+                "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing to check'; ",
+                "else pid=$(cat /tmp/dropbear_koreader.pid 2>/dev/null); ",
+                "if [ -n \"$pid\" ] && kill -0 $pid 2>/dev/null; then echo \"server process: running, pid $pid\"; else echo 'server process: not running'; fi; ",
+                "if grep -i ':08AE ' /proc/net/tcp 2>/dev/null | grep -q ' 0A '; then echo 'port 2222: listening'; else echo 'port 2222: not listening'; fi; ",
+                "ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2); ",
+                "echo \"ssh -p 2222 root@${ip:-no-address}\"; ",
+                "echo 'last SSH log lines:'; tail -n 8 /mnt/us/browser/ssh/dropbear.log 2>/dev/null || echo '(no SSH log yet: start SSH once)'; fi"
             ),
             // Stops the listener and every session it started (their command lines name dropbear).
             Change::StopSsh => concat!(
@@ -180,9 +196,6 @@ pub(crate) fn run_fixed(title: &str, shown: &str, command: &str, timeout: Durati
     }
 }
 
-/// The password the entry field starts with. It is selected, so typing replaces it.
-pub(crate) const DEFAULT_SSH_PASSWORD: &str = "";
-
 /// Whether `pw` is an acceptable SSH password: 6 to 64 letters, digits, or `- _ . @ # % + = !`. Only these
 /// characters can reach the shell command, so nothing in the password can change what the command does.
 pub(crate) fn valid_ssh_password(pw: &str) -> bool {
@@ -196,9 +209,10 @@ impl Browser {
         self.password_entry = true;
         self.keyboard = true;
         self.sheet = None;
-        self.typed = DEFAULT_SSH_PASSWORD.chars().collect();
-        self.caret = self.typed.len();
-        self.select_all = true;
+        // The field starts empty: the password is never kept in the source.
+        self.typed = Vec::new();
+        self.caret = 0;
+        self.select_all = false;
         self.layer = Layer::Lower;
         self.refresh_suggestions();
         self.touch(0, self.height, Wave::Text);
@@ -308,7 +322,7 @@ mod tests {
     fn ssh_passwords_must_be_safe_for_the_shell_command() {
         assert!(valid_ssh_password("Kindle-2026_pw"));
         assert!(valid_ssh_password("a@b#c%d+e=f!"));
-        assert!(valid_ssh_password(DEFAULT_SSH_PASSWORD));
+        assert!(valid_ssh_password("Example-1"));
         assert!(!valid_ssh_password("short"));
         assert!(!valid_ssh_password(&"x".repeat(65)));
         assert!(!valid_ssh_password("has space"));

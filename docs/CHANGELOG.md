@@ -2,22 +2,49 @@
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
-[Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.18`.
+[Semantic Versioning](https://semver.org/). The workspace version is `0.2.1`, released as tag `v0.2.1`.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-17
+
 ### Added
+- Display sheet, screen refresh section: page refresh (AUTO by default, the stock EPUB reader's mode; or GC16, GL16, REAGL, DU), bars and taps refresh (DU by default, or GL16), and a flash on each new page (off by default). Saved in `settings.tsv` as `page_wave`, `ui_wave` and `flash_on_load`.
+- Rendered-screen cache: the last three screens of a page are kept, so turning back to one is quick. The next screen is rendered while the device is idle (prefetch), so the next page turn is faster.
+- Diagnostics: Check SSH reports whether the SSH server is listening on port 2222, by reading the kernel's socket table, without starting or stopping anything.
+- Deploy over SSH: `deploy/install-ssh.sh` copies the browser, the library launcher and the icon to the Kindle over Wi-Fi, through one shared connection (one password prompt), and checks the new binary's SHA-256 on the device.
+- Crash log: the device build records the signal and the faulting address before it exits.
+- Forms: checkboxes and radio buttons toggle on tap and are sent only when checked; disabled fields are not sent; readonly fields are sent; password fields show stars; Done commits a field without sending its form (the form's submit button sends it).
+- `XMLHttpRequest` as a wrapper over `fetch` (readystatechange, load, error, loadend).
+- Full `matchMedia` queries: lists, `and`, `not`, `only`, size, orientation, colour scheme and pointer.
+- `localStorage` is kept per site in the data folder and survives a restart (1 MB per site).
+- Images are off by default for web pages; each image shows its alt text in a box.
+- Find in page: a Find button in the menu opens the keyboard; each Find scrolls to the next match.
+- Scripts on or off per site (Display sheet). Off removes the site's scripts and shows its `<noscript>` text.
+- Select lists: a tap opens the options in a sheet, and the chosen one is sent with the form.
+- Page scripts get `input` and `change` when a field, checkbox, radio or select is committed, and a cancelable `submit` before a form is sent.
+- `history.pushState` and `replaceState` change the address shown, and the page's history entry follows (no load).
+- Session, bookmark, history, settings, scripts-off and saved-page files are written atomically (temporary file, flush, rename). A saved page that cannot be written is reported to the reader.
+- `setInterval` fires a bounded number of times while a page settles (three), and `clearInterval` stops it.
+- Offline copies keep the page's stylesheets and images (inside the saved HTML) and drop its scripts; the copy opens without a network.
+- `pushState` adds a history entry and `replaceState` replaces it. Back and Forward to an entry the page pushed fire `popstate` with the pushed state, without loading the page again.
+- Desktop memory and page-turn measurements in `docs/PERFORMANCE.md`.
+- Device values (screen size, touch name, page-button keys, battery and charger paths) are in one per-model table in `kb-kindle`; the Oasis 3 values are unchanged.
+- A ten-site matrix (`--network`), with dated results in `docs/SITE-MATRIX.md`.
+- A basic `MutationObserver`: attribute and child-list changes made through the DOM methods are delivered to the observer.
 - Diagnostics page (`kbp://diagnostics`, Diagnostics button in the menu). Run checks runs eight read-only checks through the shell engine (shell, system, storage, network interfaces, DNS, hosts file, browser files, processes) and shows each result. Results are also logged as `[diag]` lines. Set public DNS points the device at 1.1.1.1 and 8.8.8.8 and patches the Wi-Fi DHCP script so the setting survives reconnects and restarts (originals saved to `/mnt/us` first), and Restore DNS puts them back. Both run fixed commands through the shell engine and log `[fix]` lines. Start SSH runs an SSH server on port 2222 with a new random root password, shown on the page. Stop SSH stops the server and its sessions. Set SSH password types the root password on the keyboard; it is checked, set with chpasswd, and never written to a URL or the log.
 - `kb-term` crate: a shell command engine. It runs a shell on a pseudo-terminal, returns each command's output, exit status, and whether it timed out, and stops a command that runs too long with Ctrl-C. It is the base for the troubleshooting tools. Ported from KOReader's terminal plugin (AGPL-3.0); see the header of `crates/kb-term/src/lib.rs`.
 
 ### Changed
 - Licence changed from MIT to GNU AGPL-3.0 (`LICENSE`, `Cargo.toml`, README). Releases up to 0.1.18 stay under MIT.
+- A finished page no longer gets a full GC16 flash, and the periodic full flash and the two-second redraw are removed. Page turns use the stock reader's partial refresh (AUTO), so the screen changes by pixels rather than flashing.
 - Each request looks up the site's address once per minute at most. The loopback check and the HTTP client
   share that lookup, and a page's images reuse it, instead of resolving the same host again for every request.
   A failed request drops its remembered address.
 
 ### Fixed
+- Dark pages no longer snap to a black screen: night-mode values below 16 are treated as black.
+- A page that finished loading flashed the whole screen; the flash on load is now off by default (see Display).
 - After a Wi-Fi drop, pages whose site publishes IPv6 addresses kept failing with "Address family not
   supported by protocol (os error 97)", even after reconnecting, so Reload could not recover. The HTTP
   client now uses IPv6 only where the system can open IPv6 sockets. The Kindle cannot, so there it connects

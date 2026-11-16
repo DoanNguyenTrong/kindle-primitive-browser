@@ -81,10 +81,7 @@ impl Browser {
         }
         tabs[self.active] = live;
         let path = data_file(SESSION_FILE);
-        if let Some(dir) = path.parent() {
-            let _ = fs::create_dir_all(dir);
-        }
-        let _ = fs::write(path, encode_session(&tabs, self.active));
+        let _ = crate::storage::write_atomic(&path, encode_session(&tabs, self.active).as_bytes());
     }
 
     /// Open the browser: the tabs saved last time come back, each with its history and scroll
@@ -120,7 +117,7 @@ impl Browser {
         if let Some(page) = self.page.as_mut() {
             page.scroll_to(saved_scroll);
         }
-        self.page_dirty = true;
+        self.mark_page_dirty();
         self.touch(0, self.height, Wave::Text);
     }
 }
