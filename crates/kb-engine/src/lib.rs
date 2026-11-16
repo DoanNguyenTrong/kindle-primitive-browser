@@ -715,6 +715,11 @@ pre{{white-space:pre-wrap;font-size:28px}}
     /// Make `url` the page's location after an in-page navigation or a restore. Only a web
     /// address becomes the base for relative links and resources: an internal address (kbp://)
     /// keeps the base of the page it shows, so a saved page still loads its own resources.
+    /// The address a script asked this page to load (`location.href = …`), once.
+    pub fn take_navigation(&self) -> Option<String> {
+        self.js.as_ref().and_then(|js| js.take_navigation())
+    }
+
     pub fn set_location(&mut self, url: &str) {
         if url.starts_with("http://") || url.starts_with("https://") {
             self.base = url.to_string();

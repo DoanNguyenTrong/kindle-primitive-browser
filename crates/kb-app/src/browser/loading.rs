@@ -119,6 +119,7 @@ impl Browser {
         self.build_page(&html, &base, is_web);
         if is_web {
             self.record_web_visit();
+            self.pending_nav = crate::html::meta_refresh_target(&html, &base);
         }
         if let Some(fragment) = url::Url::parse(&self.url)
             .ok()
@@ -128,6 +129,7 @@ impl Browser {
                 page.scroll_to_fragment(&fragment);
             }
         }
+        self.follow_script_navigation();
         self.save_session();
         // A finished page gets one full refresh: the panel then shows the whole page cleanly.
         self.touch(0, self.height, Wave::Flash);
@@ -138,6 +140,8 @@ impl Browser {
     pub(super) fn build_page(&mut self, html: &str, base: &str, is_web: bool) {
         let source = html.to_string();
         let prepared = prepare_html(html, &self.settings);
+        // Stylesheets for print or the dark scheme are not applied to this screen.
+        let prepared = if is_web { crate::html::drop_unmatched_stylesheet_links(&prepared) } else { prepared };
         let html = prepared.as_str();
         let stats = self.net.stats();
         let mut pump = self.pump.take();
@@ -186,6 +190,27 @@ impl Browser {
         self.reader = false;
         self.page_is_web = is_web;
         self.page = Some(page);
+    }
+
+    /// A script asked for another address (`location.href = …`, `location.replace()`), or the page is a
+    /// meta-refresh redirect: load that address in place of this one. Returns true when it did. Up to
+    /// five hops, so a redirect loop stops. A fragment-only change moves within the page instead.
+    pub(super) fn follow_script_navigation(&mut self) -> bool {
+        if let Some(next) = self.page.as_mut().and_then(|p| p.take_navigation()) {
+            self.pending_nav = Some(next);
+        }
+        let Some(next) = self.pending_nav.take() else { return false };
+        if self.redirect_depth >= 5 {
+            return false;
+        }
+        if same_document(&self.url, &next) && self.url != next {
+            self.show_fragment(&next);
+            return false;
+        }
+        self.redirect_depth += 1;
+        let _ = self.load(&next, Policy::Network);
+        self.redirect_depth -= 1;
+        true
     }
 
     /// Record a web page the reader navigated to (history and cookies). Rebuilds such as

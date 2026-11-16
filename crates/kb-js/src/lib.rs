@@ -40,6 +40,8 @@ pub struct Js {
     rt: Runtime,
     ctx: Context,
     deadline: Rc<Cell<Instant>>,
+    /// An address the page script asked to load (`location.href = …`), until the browser takes it.
+    nav: Rc<RefCell<Option<String>>>,
 }
 
 /// Page fetch hook: `(url) -> Option<[status, final_url, body]>`.
@@ -56,8 +58,9 @@ impl Js {
         rt.set_interrupt_handler(Some(Box::new(move || Instant::now() > d.get())));
         let ctx = Context::full(&rt).map_err(|e| e.to_string())?;
         let url = url.to_string();
+        let nav: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
         ctx.with(|ctx| -> rquickjs::Result<()> {
-            install_natives(&ctx, doc, http)?;
+            install_natives(&ctx, doc, http, nav.clone())?;
             ctx.globals().set("__kbUrl", url)?;
             ctx.globals().set("__kbCssWidth", width)?;
             ctx.globals().set("__kbCssHeight", height)?;
@@ -66,7 +69,7 @@ impl Js {
             Ok(())
         })
         .map_err(|e| format!("js init failed: {e}"))?;
-        Ok(Js { rt, ctx, deadline })
+        Ok(Js { rt, ctx, deadline, nav })
     }
 
     /// Run one script. Errors are reported to stderr and do not stop the page.
@@ -104,6 +107,11 @@ impl Js {
                 report(&ctx, "currentScript", &e.to_string());
             }
         });
+    }
+
+    /// The address a script asked the page to load, once: the browser loads it in place of the page.
+    pub fn take_navigation(&self) -> Option<String> {
+        self.nav.borrow_mut().take()
     }
 
     /// Keep location reads consistent after the browser follows a fragment link.
@@ -211,7 +219,7 @@ fn attr_name(local: &str) -> QualName {
     QualName::new(None, Namespace::from(""), LocalName::from(local))
 }
 
-fn install_natives(ctx: &Ctx<'_>, doc: Doc, http: HttpGet) -> rquickjs::Result<()> {
+fn install_natives(ctx: &Ctx<'_>, doc: Doc, http: HttpGet, nav: Rc<RefCell<Option<String>>>) -> rquickjs::Result<()> {
     let n = Object::new(ctx.clone())?;
 
     // ---- queries ----
@@ -488,6 +496,11 @@ fn install_natives(ctx: &Ctx<'_>, doc: Doc, http: HttpGet) -> rquickjs::Result<(
     let h = http.clone();
     n.set("httpRequest", Function::new(ctx.clone(), move |method: String, url: String, headers: Vec<String>, body: Option<String>| -> Option<Vec<String>> {
         guarded(|| h(&method, &url, &headers, body))
+    })?)?;
+
+    // location.href = …, location.replace(…), window.location = …: ask the browser to load the address.
+    n.set("navigate", Function::new(ctx.clone(), move |url: String| {
+        *nav.borrow_mut() = Some(url);
     })?)?;
 
     ctx.globals().set("__kbn", n)?;

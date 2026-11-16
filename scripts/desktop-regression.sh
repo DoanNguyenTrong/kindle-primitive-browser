@@ -387,6 +387,16 @@ back
 assert url kbp://home
 quit" "[assert] url $BASE/index.html: PASS" "[assert] tabs 2: PASS" "[assert] url kbp://home: PASS"
 
+# Redirects from a page's script or meta refresh (for example DuckDuckGo's result links): the browser
+# loads the target in place of the redirecting page.
+run script_navigation_follows_redirects "open $BASE/redirect_parent.html
+assert url $BASE/plain.html
+open $BASE/redirect_location.html
+assert url $BASE/plain.html
+open $BASE/redirect_meta.html
+assert url $BASE/plain.html
+quit" "[assert] url $BASE/plain.html: PASS"
+
 # The keyboard's third layer: "#+=" from the symbols layer, and "123" back.
 run keyboard_third_symbol_layer "open kbp://home
 action addr

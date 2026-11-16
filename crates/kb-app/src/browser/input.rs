@@ -177,6 +177,10 @@ impl Browser {
             self.touch(0, self.height, Wave::Text);
             return;
         }
+        // A click handler may have set location.href: that address replaces the page.
+        if self.follow_script_navigation() {
+            return;
+        }
         // Text fields open the keyboard for editing; submit buttons send their form.
         let field = self.page.as_ref().and_then(|p| p.input_at(x, y));
         if let Some((key, value)) = field {

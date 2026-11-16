@@ -358,7 +358,29 @@
   let parsed = { hostname: '', protocol: '', pathname: '/' };
   const m = /^(https?:)\/\/([^/?#]*)([^?#]*)/.exec(href);
   if (m) parsed = { hostname: m[2].split(':')[0], protocol: m[1], pathname: m[3] || '/' };
-  globalThis.location = Object.assign({ href, origin: href.split('/').slice(0, 3).join('/') }, parsed);
+  // Script navigation: setting location.href, calling location.replace() or assign(), or assigning
+  // window.location asks the browser to load the address once the script returns. While the browser
+  // itself updates the location (copyLocation), the href setter only records the new value.
+  let currentHref = href;
+  let silentLocation = false;
+  const requestNavigation = (u) => N.navigate(resolveUrl(String(u)));
+  const locationObject = Object.assign({ origin: href.split('/').slice(0, 3).join('/') }, parsed);
+  Object.defineProperty(locationObject, 'href', {
+    enumerable: true, configurable: true,
+    get() { return currentHref; },
+    set(v) { if (silentLocation) currentHref = String(v); else requestNavigation(v); },
+  });
+  locationObject.assign = requestNavigation;
+  locationObject.replace = requestNavigation;
+  locationObject.reload = () => requestNavigation(currentHref);
+  Object.defineProperty(globalThis, 'location', {
+    enumerable: true, configurable: true,
+    get() { return locationObject; },
+    set(v) { requestNavigation(v); },
+  });
+  // A page's own window is its top and parent window, so window.parent.location works.
+  globalThis.parent = globalThis;
+  globalThis.top = globalThis;
 
   // ---- standard browser APIs that pages expect -----------------------------
   // Each is implemented enough for common code paths; anything heavier is stubbed.
@@ -499,7 +521,10 @@
   }
   globalThis.URL = URLLite;
   // Object.assign copies own properties only; href is a getter on URLLite, so set it explicitly.
-  const copyLocation = (u) => Object.assign(globalThis.location, u, { href: u.href });
+  const copyLocation = (u) => {
+    silentLocation = true;
+    try { Object.assign(globalThis.location, u, { href: u.href }); } finally { silentLocation = false; }
+  };
   try { copyLocation(new URLLite(href)); } catch (_) {}
   globalThis.URLSearchParams = URLSearchParams;
 

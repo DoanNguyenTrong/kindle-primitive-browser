@@ -84,6 +84,24 @@ a server. This project builds a browser that runs entirely on the device.
 [Liliputing](https://liliputing.com/amazons-kindle-web-browser-is-actually-usable-now/).
 Community reports vary by model and firmware. Amazon publishes no official list of the browser's limits.</sub>
 
+### Real sites, rendered by the desktop build
+
+These pages were opened in the same engine that runs on the Kindle, with the fonts from this repository.
+The Kindle's own screen is smaller, so text and images will look different on the device.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/site_wikipedia.png" alt="Wikipedia" width="260"><br><sub>Wikipedia: Amazon Kindle</sub></td>
+    <td align="center"><img src="docs/images/site_hackernews.png" alt="Hacker News" width="260"><br><sub>Hacker News</sub></td>
+    <td align="center"><img src="docs/images/site_python_docs.png" alt="Python documentation" width="260"><br><sub>Python 3 documentation</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/site_duckduckgo.png" alt="DuckDuckGo results" width="260"><br><sub>DuckDuckGo results</sub></td>
+    <td align="center"><img src="docs/images/site_gutenberg.png" alt="Project Gutenberg" width="260"><br><sub>Project Gutenberg (images on)</sub></td>
+    <td></td>
+  </tr>
+</table>
+
 ## Quick start
 
 1. **Download** `primitive-browser-<version>.zip` from the [latest release](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases/latest).
@@ -99,6 +117,7 @@ macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 |---|---|
 | 🌐 **Real pages** | HTML and CSS with flexbox and grid. Layout width is 412, 600 or 800 CSS px. |
 | 🗂️ **Tabs and history** | Each tab keeps its own history and scroll position, and tabs come back after a restart. |
+| 🔀 **Redirects** | Script and meta-refresh redirects are followed, so search-result links reach their target. |
 | ⌨️ **Keyboard** | An on-screen keyboard with a caret, Shift, symbols and address suggestions. |
 | 📖 **Reading** | A reading view, text size from 80% to 200%, day and night, and an images switch. |
 | 🔖 **Library** | Bookmarks you can reorder, recent visits, saved HTML pages and folding Home sections. |
@@ -113,7 +132,7 @@ macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 | Kindle Oasis 3 (1264 × 1680, firmware 5.18.2) | ✅ Verified on hardware |
 | Other Kindle models | 🛠️ Not supported yet. See [device support](docs/DEVICES.md) for the plan. |
 
-**Current version: 0.1.17.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
+**Current version: 0.1.18.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
 observations are in [device notes](docs/device-notes.md).
 
 ## Limits
@@ -137,7 +156,9 @@ Primitive Browser is for reading and reference pages, not web apps.
 **On the Kindle**
 
 - Verified on the Oasis 3 only.
+- `Intl` is not available in the JavaScript engine, so some pages log script errors when they format dates or numbers.
 - Pages took 10 to 36 seconds to load in the logged sessions.
+- Image-heavy pages use a lot of memory. Project Gutenberg's *Pride and Prejudice* peaked at 593 MB with images on, and 105 MB with images off (desktop measurement).
 - A page turn takes about one second to draw.
 - Peak memory reached 163 MB in one session.
 
@@ -154,6 +175,7 @@ Planned in this order. Details are in the [roadmap](docs/04-roadmap.md) and [dev
 - [ ] `localStorage` kept per site across restarts
 - [ ] Working `setInterval`, basic `MutationObserver`, and `history.pushState` events
 - [ ] Full `matchMedia` queries
+- [ ] Images off by default for web pages, with alt-text placeholders (see the measurements under Limits)
 - [ ] Faster page turns (about one second today)
 - [ ] Find what makes a large page reach 163 MB
 - [ ] A ten-page site matrix, to test these features on real sites

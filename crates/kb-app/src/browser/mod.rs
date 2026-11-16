@@ -111,6 +111,10 @@ pub struct Browser {
     /// The device's own controls, and the values the panel last showed.
     device: Box<dyn DeviceControl>,
     device_status: DeviceStatus,
+    /// An address to load in place of this page (a script navigation or a meta refresh).
+    pending_nav: Option<String>,
+    /// How many redirects are in progress, so a redirect loop stops after a few hops.
+    redirect_depth: u8,
 }
 
 impl Browser {
@@ -170,6 +174,8 @@ impl Browser {
             quick_layer: None,
             device: Box::new(NoDevice),
             device_status: DeviceStatus::unavailable(),
+            pending_nav: None,
+            redirect_depth: 0,
         }
     }
 

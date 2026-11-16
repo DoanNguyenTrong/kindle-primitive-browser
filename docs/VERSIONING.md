@@ -47,8 +47,7 @@ Tags are never moved or reused. If a release is wrong, publish a new patch versi
 
 ## Current state
 
-- Workspace version: **0.1.17**, not yet tagged. The next release tag will be `v0.1.17` or the next
-  number chosen at release time.
+- Workspace version: **0.1.18**, released as tag `v0.1.18`. Earlier release tags: `v0.1.17`.
 - Earlier versions (0.1.0 to 0.1.16) were development device builds, so they have no tags.
 
 ## Naming

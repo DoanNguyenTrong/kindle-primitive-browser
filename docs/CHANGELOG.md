@@ -3,9 +3,11 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.17`.
+workspace version is `0.1.18`.
 
 ## [Unreleased]
+
+## [0.1.18] - 2026-11-16
 
 ### Changed
 - Licence: MIT (`LICENSE`), set in `Cargo.toml` and the README.
@@ -26,6 +28,12 @@ workspace version is `0.1.17`.
 - `deploy/install.sh` finds the Kindle on macOS and Linux, or at the path given in `KINDLE`.
 
 ### Fixed
+- Pages showed their dark theme on a light screen. A stylesheet link with a `media` query for the dark colour
+  scheme or for print was applied anyway. Such links are now skipped for web pages.
+- Links from search engines did not open. A page that redirects with its script (`window.parent.location.replace(...)`,
+  as DuckDuckGo's result links do) or with `location.href` now loads the target in place of the redirect page.
+  Meta-refresh redirects (up to three seconds) load too. `window.parent` and `window.top` are the page's window.
+  Up to five redirects are followed, so a loop stops. Covered by `script_navigation_follows_redirects`.
 - The quick settings panel showed "not charging" while the Kindle was charging. The driver read the
   framework's `isCharging` property first, and its answer 0 ended the search before the charger's own
   flag was read. It now checks the property, charger flag and charger status: either integer value 1
