@@ -29,14 +29,16 @@ rendering server while you browse.
 
 <table>
   <tr>
-    <td colspan="3" align="center"><img src="docs/images/home.png" alt="Home page" width="330"></td>
+    <td colspan="3" align="center"><img src="docs/images/site_wikipedia.png" alt="Wikipedia article on Amazon Kindle" width="330"><br><sub>Wikipedia, Amazon Kindle article</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/keyboard_caret_insert.png" alt="On-screen keyboard" width="260"><br><sub>On-screen keyboard</sub></td>
-    <td align="center"><img src="docs/images/reading_view.png" alt="Reading view" width="260"><br><sub>Reading view</sub></td>
-    <td align="center"><img src="docs/images/quick_panel_from_top_edge.png" alt="Quick settings" width="260"><br><sub>Quick settings</sub></td>
+    <td align="center"><img src="docs/images/real_keyboard_search.png" alt="Typing a search on the keyboard" width="260"><br><sub>Typing a search, with suggestions</sub></td>
+    <td align="center"><img src="docs/images/real_reading_view.png" alt="Reading view on Wikipedia" width="260"><br><sub>Reading view</sub></td>
+    <td align="center"><img src="docs/images/real_quick_settings.png" alt="Quick settings over Hacker News" width="260"><br><sub>Quick settings, over Hacker News</sub></td>
   </tr>
 </table>
+
+<sub>Live pages, rendered by the desktop build of the same engine. The quick settings use a demo battery (72%) and a fixed clock.</sub>
 
 <sub>Screenshots are from the desktop build of the same engine. The quick settings preview shows
 demo values (a 72% battery and a fixed clock), not a real device.</sub>
@@ -84,20 +86,17 @@ a server. This project builds a browser that runs entirely on the device.
 [Liliputing](https://liliputing.com/amazons-kindle-web-browser-is-actually-usable-now/).
 Community reports vary by model and firmware. Amazon publishes no official list of the browser's limits.</sub>
 
-### Real sites, rendered by the desktop build
-
-These pages were opened in the same engine that runs on the Kindle, with the fonts from this repository.
-The Kindle's own screen is smaller, so text and images will look different on the device.
+### More real sites
 
 <table>
   <tr>
-    <td align="center"><img src="docs/images/site_wikipedia.png" alt="Wikipedia" width="260"><br><sub>Wikipedia: Amazon Kindle</sub></td>
+    <td align="center"><img src="docs/images/real_menu.png" alt="Menu on the Python documentation" width="260"><br><sub>The menu, on the Python 3 documentation</sub></td>
     <td align="center"><img src="docs/images/site_hackernews.png" alt="Hacker News" width="260"><br><sub>Hacker News</sub></td>
-    <td align="center"><img src="docs/images/site_python_docs.png" alt="Python documentation" width="260"><br><sub>Python 3 documentation</sub></td>
+    <td align="center"><img src="docs/images/site_duckduckgo.png" alt="DuckDuckGo results" width="260"><br><sub>DuckDuckGo results</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/images/site_duckduckgo.png" alt="DuckDuckGo results" width="260"><br><sub>DuckDuckGo results</sub></td>
-    <td align="center"><img src="docs/images/site_gutenberg.png" alt="Project Gutenberg" width="260"><br><sub>Project Gutenberg (images on)</sub></td>
+    <td align="center"><img src="docs/images/site_gutenberg.png" alt="Project Gutenberg" width="260"><br><sub>Project Gutenberg, images on</sub></td>
+    <td align="center"><img src="docs/images/site_python_docs.png" alt="Python documentation" width="260"><br><sub>Python 3 documentation</sub></td>
     <td></td>
   </tr>
 </table>
