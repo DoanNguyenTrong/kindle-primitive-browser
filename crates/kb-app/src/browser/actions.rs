@@ -185,6 +185,7 @@ impl Browser {
             }
             "kb:exit" => {
                 kb_net::save_cookies();
+                self.save_session();
                 self.exit = true;
             }
             _ => {}

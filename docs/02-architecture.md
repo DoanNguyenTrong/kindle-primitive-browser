@@ -137,6 +137,7 @@ Root: `$KB_DATA` on the computer, `/mnt/us/browser/data` on the device.
 | `bookmarks.tsv` | URL and title per line | on bookmark change |
 | `history.tsv` | Up to 300 visited pages, newest first | after each web load |
 | `saved.tsv` and `saved/<key>.html` | Offline copies and their index | on Save |
+| `session.tsv` | Active tab, URLs, per-tab history and scroll positions | after page loads, tab closes, and Exit |
 | `settings.tsv` | Text size, page width, night mode, Images, folded Home sections | on change |
 | `defaults_v2` | Marker: default bookmarks already added | once |
 
@@ -210,9 +211,12 @@ fragments preserve position. Full loads retain the requested fragment if the res
 omits it. History traversal restores the recorded position instead of recomputing the jump.
 Hashchange/popstate dispatch and script-driven location navigation are not implemented.
 
-Persistence is separate: tab sessions are in-memory; settings/bookmark/history/saved writes
-are best-effort. Atomic writes, surfaced storage failures, complete offline archives and
-restart restoration are future work in the roadmap.
+Tab navigation metadata is checkpointed in `session.tsv` after page loads, tab closes and
+Exit. Both drivers can resume its active tab using disk-cache policy; the desktop bypasses
+resume when an explicit start address is supplied. The session codec sanitizes field separators
+and clamps active/history indices during resume. It does not persist live DOM or JS state.
+Writes are best-effort and non-atomic; crash recovery uses the last written checkpoint. Atomic
+writes, surfaced storage failures and complete offline archives remain roadmap work.
 
 ## 2.12 `kb-app` module layout
 
@@ -226,6 +230,7 @@ re-exports the API the drivers use. `Browser` is defined in `browser/mod.rs`; ea
 | `browser/mod.rs` | `Browser` state, construction, and the read-only accessors used by the drivers |
 | `browser/nav.rs` | Opening pages, history (Back and Forward), fragments within a page, reflow after a setting change |
 | `browser/loading.rs` | Loading and building documents: fetch with progress, forms (POST), reader view, recording visits |
+| `browser/session.rs` | Session text codec, checkpoint writes, and startup resume |
 | `browser/tabs.rs` | Tabs: switching, creating, closing; each tab keeps its own history, scroll and source |
 | `browser/input.rs` | Taps, long presses, scrolling, the press highlight, hit testing for bars, sheets, keyboard and page |
 | `browser/actions.rs` | Actions named by `kb:` links: menu, Display settings (text size, width, day or night), toolbar |

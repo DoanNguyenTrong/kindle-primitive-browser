@@ -62,8 +62,10 @@ impl Browser {
         if url.is_empty() {
             self.open("kbp://home");
         } else {
-            let _ = self.load(&url, Policy::Cache(Duration::from_secs(60 * 60 * 24 * 7)));
+            // Read the saved position first: loading saves the session, which records the new page's
+            // position (the top) in this slot.
             let saved = self.scrolls.get(self.idx).copied().unwrap_or(0.0);
+            let _ = self.load(&url, Policy::Cache(Duration::from_secs(60 * 60 * 24 * 7)));
             if let Some(page) = self.page.as_mut() {
                 page.scroll_to(saved);
             }
@@ -111,6 +113,7 @@ impl Browser {
             }
         }
         self.sheet = sheet;
+        self.save_session();
         self.touch(0, self.height, Wave::Text);
     }
 }

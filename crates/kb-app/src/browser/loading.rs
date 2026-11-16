@@ -128,6 +128,7 @@ impl Browser {
                 page.scroll_to_fragment(&fragment);
             }
         }
+        self.save_session();
         // A finished page gets one full refresh: the panel then shows the whole page cleanly.
         self.touch(0, self.height, Wave::Flash);
         Ok(())

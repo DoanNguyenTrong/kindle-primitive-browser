@@ -46,6 +46,7 @@ pub fn icon(name: &str, size: u32) -> String {
         "sun" => r#"<circle cx="12" cy="12" r="4"/><path d="M12 2 V5 M12 19 V22 M2 12 H5 M19 12 H22 M4.9 4.9 L7 7 M17 17 L19.1 19.1 M4.9 19.1 L7 17 M17 7 L19.1 4.9"/>"#,
         "warm" => r#"<circle cx="12" cy="12" r="8"/><path d="M12 4 A8 8 0 0 1 12 20 Z" fill="currentColor"/>"#,
         "wifi" => r#"<path d="M2.5 9 A14 14 0 0 1 21.5 9"/><path d="M5.5 12.5 A9.5 9.5 0 0 1 18.5 12.5"/><path d="M8.5 16 A5 5 0 0 1 15.5 16"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/>"#,
+        "wifi-off" => r#"<path d="M2.5 9 A14 14 0 0 1 21.5 9"/><path d="M5.5 12.5 A9.5 9.5 0 0 1 18.5 12.5"/><path d="M8.5 16 A5 5 0 0 1 15.5 16"/><circle cx="12" cy="19.5" r="1" fill="currentColor"/><path d="M3 3 L21 21" stroke-width="2.4"/>"#,
         "battery" => r#"<rect x="3" y="7" width="16" height="10" rx="2"/><path d="M21 10.5 V13.5"/><rect x="5.5" y="9.5" width="9" height="5" fill="currentColor" stroke="none"/>"#,
         "chev-up" =>r#"<path d="M6 15 L12 9 L18 15"/>"#,
         "chev-down" => r#"<path d="M6 9 L12 15 L18 9"/>"#,
@@ -83,7 +84,7 @@ html,body{{margin:0;background:#fff;color:#111;font-family:sans-serif;overflow:h
 .cell.on{{color:#111}}
 .count{{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border:2px solid #111;border-radius:10px;font-size:24px;font-weight:bold;color:#111}}
 .sheet{{background:#fff}}
-.sheet-title{{display:flex;align-items:center;justify-content:space-between;height:{SHEET_TITLE_H}px;padding:0 24px;font-size:26px;letter-spacing:1px;color:#666;border-bottom:2px solid #111}}
+.sheet-title{{display:flex;align-items:center;justify-content:space-between;height:{SHEET_TITLE_H}px;padding:0 24px;font-size:26px;letter-spacing:1px;color:#666;border-top:3px solid #111}}
 .sheet-controls{{display:flex;gap:16px}}
 .sheet-title .btn{{height:68px;font-size:24px}}
 .section{{padding:22px 24px 6px;font-size:22px;color:#777;letter-spacing:1px}}
@@ -222,7 +223,9 @@ pub fn sheet_header(title: &str, controls: &str) -> String {
 
 /// The Exit control shown in the menu's title strip.
 pub fn exit_button() -> String {
-    r#"<a class="btn on" href="kb:exit">Exit browser</a>"#.to_string()
+    // Exit closes the browser and returns to the Kindle library. The open tabs are kept, so the
+    // browser resumes them when it is opened again.
+    r#"<a class="btn on" href="kb:exit">Exit</a>"#.to_string()
 }
 
 /// Display sheet: text size steps, page width, and day or night. Changes apply at once and the
@@ -276,28 +279,50 @@ fn level_row(icon_name: &str, label: &str, action: &str, level: u32) -> String {
     )
 }
 
+/// The battery icon's styles. The quick settings panel and the battery gallery both use them.
+const BATTERY_CSS: &str = ".batt{position:relative;width:128px;height:56px}\
+.batt svg{position:absolute;left:0;top:0}\
+.batt-num{position:absolute;left:0;top:0;width:128px;height:56px;display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:bold;color:#111}\
+.batt-num.inv{color:#fff}\
+.batt-num .bolt{position:absolute;left:24px;top:17px}\
+.batt-clip{position:absolute;left:0;top:0;height:56px;overflow:hidden}";
+
+/// A battery drawn to the charge level: the level is solid black and the rest is white. The number
+/// (and the bolt while charging) is black where it sits on the white part and white where it sits
+/// on the black part. The split is a clip at the level's edge, so the number changes colour there.
+pub fn battery_icon(level: u32, charging: bool) -> String {
+    let pct = level.min(100);
+    let fill = (104.0 * pct as f32 / 100.0).round() as u32;
+    // The level's right edge in battery pixels: the body starts at x 8.
+    let edge = 8 + fill;
+    let bolt = if charging {
+        r##"<svg class="bolt" width="14" height="22" viewBox="0 0 14 22" aria-hidden="true"><path d="M8 0 L1 12 H6 L4 22 L13 9 H8 Z" fill="currentColor"/></svg>"##
+    } else {
+        ""
+    };
+    format!(
+        r##"<div class="batt"><svg width="128" height="56" viewBox="0 0 128 56" aria-hidden="true"><rect x="2" y="4" width="116" height="48" rx="12" fill="#fff" stroke="#111" stroke-width="3"/><rect x="122" y="18" width="5" height="20" rx="2" fill="#111"/><rect x="8" y="10" width="{fill}" height="36" rx="6" fill="#111"/></svg><div class="batt-num">{bolt}<span>{pct}</span></div><div class="batt-clip" style="width:{edge}px"><div class="batt-num inv">{bolt}<span>{pct}</span></div></div></div>"##
+    )
+}
+
 /// The quick settings panel that the Kindle draws from the top edge: the clock and battery, Wi-Fi,
 /// the brightness and warmth bars, and a handle to close it.
 pub fn quick_panel(s: &DeviceStatus) -> String {
-    let battery = match s.battery {
-        Some(p) => format!("{p}%{}", if s.charging { " charging" } else { "" }),
+    let status = match s.battery {
+        Some(p) => battery_icon(p, s.charging),
         None => String::new(),
     };
-    let wifi_label = if s.wifi_on { "Wi-Fi on" } else { "Wi-Fi off" };
-    let wifi_state = if s.wifi_on && !s.wifi_state.is_empty() { s.wifi_state.as_str() } else { "" };
     let body = format!(
-        r#"<div class="quick"><div class="qp-top"><div class="qp-time"><span class="qp-clock">{clock}</span><span class="qp-date">{date}</span></div><div class="qp-batt">{bi}<span>{battery}</span></div></div>
-<a class="qp-wifi" href="kb:wifi"><span class="qp-ico">{wi}</span><span class="qp-wlabel">{wifi_label}</span><span class="qp-wstate">{wifi_state}</span><span class="qp-switch{on}">{switch}</span></a>
+        r#"<div class="quick"><div class="qp-top"><div class="qp-time"><span class="qp-clock">{clock}</span><span class="qp-date">{date}</span></div><div class="qp-status"><a class="qp-wifi{off}" href="kb:wifi" aria-label="Wi-Fi {wifi_word}">{wi}</a>{status}</div></div>
 {brightness}
 {warmth}
 <a class="qp-handle" href="kb:quickclose">{up}<span>Close</span></a></div>"#,
         clock = esc(&s.clock),
         date = esc(&s.date),
-        bi = icon("battery", 36),
-        battery = esc(&battery),
-        wi = icon("wifi", 40),
-        on = if s.wifi_on { " on" } else { "" },
-        switch = if s.wifi_on { "On" } else { "Off" },
+        off = if s.wifi_on { "" } else { " off" },
+        wifi_word = if s.wifi_on { "on, tap to turn off" } else { "off, tap to turn on" },
+        wi = icon(if s.wifi_on { "wifi" } else { "wifi-off" }, 44),
+        status = status,
         brightness = level_row("sun", "Brightness", "bright", s.brightness),
         warmth = level_row("warm", "Warmth", "warm", s.warmth),
         up = icon("chev-up", 32),
@@ -307,12 +332,9 @@ pub fn quick_panel(s: &DeviceStatus) -> String {
 .qp-time{display:flex;flex-direction:column}\
 .qp-clock{font-size:52px;font-weight:bold;color:#111}\
 .qp-date{font-size:24px;color:#555}\
-.qp-batt{display:flex;align-items:center;gap:12px;font-size:28px;color:#111}\
-.qp-wifi{display:flex;align-items:center;gap:16px;height:84px;margin:0 28px;padding:0 4px;border-top:1px solid #d8d8d8;border-bottom:1px solid #d8d8d8;color:#111;text-decoration:none;font-size:28px}\
-.qp-wlabel{flex:1}\
-.qp-wstate{font-size:24px;color:#666}\
-.qp-switch{min-width:88px;height:56px;line-height:56px;text-align:center;border:2px solid #111;border-radius:28px;font-size:24px}\
-.qp-switch.on{background:#111;color:#fff}\
+.qp-status{display:flex;align-items:center;gap:26px}\
+.qp-wifi{display:flex;align-items:center;justify-content:center;width:64px;height:64px;color:#111;text-decoration:none;border-radius:32px}\
+.qp-wifi.off{color:#8a8a8a}\
 .qp-row{padding:12px 28px 4px}\
 .qp-head{display:flex;align-items:center;gap:14px;height:56px;color:#111;font-size:28px}\
 .qp-label{flex:1}\
@@ -323,7 +345,7 @@ pub fn quick_panel(s: &DeviceStatus) -> String {
 .qp-step{flex:1;height:72px;border:2px solid #bdbdbd;border-radius:6px;background:#fff;text-decoration:none}\
 .qp-step.on{background:#111;border-color:#111}\
 .qp-handle{display:flex;flex-direction:column;align-items:center;justify-content:center;height:72px;margin-top:auto;border-top:1px solid #d8d8d8;color:#111;text-decoration:none;font-size:22px;letter-spacing:1px}".replace("{QUICK_H}", &QUICK_H.to_string());
-    document("Quick settings", &body, &extra)
+    document("Quick settings", &body, &format!("{extra}{BATTERY_CSS}"))
 }
 
 /// Tab switcher: a grid of cards (two per row), the open tab marked, and a New tab card.
@@ -643,4 +665,62 @@ pub fn error(title: &str, reason: &str, detail: &str) -> String {
 pub fn toast(message: &str) -> String {
     let body = format!(r#"<div class="toast">{}</div>"#, esc(message));
     document("Notice", &body, "body{height:72px}")
+}
+
+#[cfg(test)]
+mod battery_tests {
+    use super::*;
+
+    #[test]
+    fn battery_shows_the_bolt_only_while_charging_and_the_level_inside() {
+        let on = battery_icon(64, true);
+        let off = battery_icon(64, false);
+        assert!(on.contains("M8 0 L1 12"), "bolt missing while charging");
+        assert!(!off.contains("M8 0 L1 12"), "bolt shown while not charging");
+        assert!(on.contains(">64<") && off.contains(">64<") && !on.contains("64%"));
+    }
+}
+
+#[cfg(test)]
+mod battery_gallery {
+    use super::*;
+
+    /// Writes `artifacts/battery/levels.png`: the battery icon at each level, with and without
+    /// charging. Runs only when `KB_BATTERY_GALLERY` is set, e.g.
+    /// `KB_BATTERY_GALLERY=1 cargo test -p kb-app battery_gallery`.
+    #[test]
+    fn write_battery_gallery() {
+        if std::env::var_os("KB_BATTERY_GALLERY").is_none() {
+            return;
+        }
+        let levels = [0u32, 5, 10, 15, 25, 35, 50, 64, 75, 90, 100];
+        let mut cells = String::new();
+        for &level in &levels {
+            for charging in [false, true] {
+                let caption = format!(
+                    "level {level} \u{b7} {}",
+                    if charging { "charging" } else { "not charging" }
+                );
+                cells.push_str(&format!(
+                    r#"<div class="cell"><div class="caption">{caption}</div>{}</div>"#,
+                    battery_icon(level, charging)
+                ));
+            }
+        }
+        let body = format!(r#"<div class="grid">{cells}</div>"#);
+        let extra = format!(
+            "{BATTERY_CSS}.grid{{display:grid;grid-template-columns:1fr 1fr;gap:36px 48px;padding:40px 40px}}\
+.cell{{display:flex;flex-direction:column;gap:14px}}.caption{{font-size:24px;color:#333}}"
+        );
+        let html = document("Battery levels", &body, &extra);
+        let (w, h) = (1264u32, 1560u32);
+        let net = std::sync::Arc::new(kb_net::SyncNet::new(4 * 1024 * 1024));
+        let mut page = kb_engine::Page::new(&html, "kb://chrome/", w, h, net, &mut || true);
+        let gray = page.render_gray();
+        let png = crate::encode_png(w, h, &gray).expect("encode");
+        let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../artifacts/battery/levels.png");
+        std::fs::create_dir_all(out.parent().expect("dir")).expect("create dir");
+        std::fs::write(&out, png).expect("write png");
+        eprintln!("wrote {}", out.display());
+    }
 }

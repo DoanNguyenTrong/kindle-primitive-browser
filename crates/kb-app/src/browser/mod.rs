@@ -28,6 +28,7 @@ mod keyboard;
 mod library;
 mod loading;
 mod nav;
+mod session;
 mod tabs;
 mod types;
 

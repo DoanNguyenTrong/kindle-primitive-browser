@@ -17,7 +17,7 @@ current device validation is pending. See the [goal and roadmap](docs/04-roadmap
 | Rendering | Blitz HTML/CSS, including flex/grid; selectable 412/600/800 CSS-px layouts, default 600 |
 | Networking | HTTPS with bundled TLS roots, redirects, six parallel sub-resources, deferred images |
 | Navigation | Links/section links, Back/Forward with absolute scroll restore, one live previous-page cache |
-| Tabs | New/switch/close; per-tab history and positions; inactive documents rebuild from cache |
+| Tabs | New/switch/close; per-tab history and positions; inactive documents rebuild from cache; session metadata resumes after restart |
 | Input | Custom keyboard with caret, Shift/symbols and suggestions; basic text-field GET/POST forms |
 | Reading | Heuristic reading view, 80–200% text size, page width, Day/Night, Images switch |
 | Library | Bookmarks with reorder/remove, recent visits, saved HTML, folding Home sections |
@@ -33,7 +33,8 @@ several browser APIs are stubs. Web storage is in-memory. See [requirements](doc
 
 Done/Go on a page field immediately submits its form. Multi-field editing, checkbox/radio/
 select controls and complete form event semantics need work. Saved pages contain HTML;
-assets are not bundled. Tabs and live DOM edits are not restored across process restarts.
+assets are not bundled. Tab metadata resumes from the last saved session; live DOM edits and
+unsaved progress after a crash are not retained.
 Device speed, memory, touch comfort and panel quality still need measurement.
 
 ## Build and install
@@ -53,15 +54,16 @@ Eject safely and open **Primitive Browser** in the library. `browser/start.txt` 
 
 The bottom toolbar contains Back, Forward, tabs, bookmark and Menu. Swipe vertically to
 scroll, horizontally for Back/Forward, or along the address bar to switch tabs. Page buttons
-move a screen. Long press a link to open a new tab. Menu/Display/Tabs keep Done visible;
-Menu also keeps Exit browser visible above its scrolling body.
+move a screen. Long press a link to open a new tab. Tap above a sheet to dismiss it. Menu
+keeps Exit visible; exiting saves the tabs before returning to the Kindle library. On startup,
+saved tabs take priority over `start.txt`, which is the fallback for a new session.
 
 ## Develop and test
 
 ```sh
 cargo test --workspace --exclude kb-kindle
 cargo build --release -p kb-desktop
-scripts/desktop-regression.sh       # 65 local scenarios with screenshots; --network adds two live-site checks
+scripts/desktop-regression.sh       # 67 local scenarios with screenshots; --network adds two live-site checks
 scripts/test-all.sh                 # every check, with evidence kept in artifacts/ (see REPORT.md)
 scripts/launcher-stub-test.sh       # seven launcher checks with stubs
 ```

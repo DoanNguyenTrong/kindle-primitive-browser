@@ -49,7 +49,7 @@ v0.1 device observations are in the changelog; they do not validate the current 
 | FR-5 | JavaScript browser APIs. | QuickJS with the subset below; no standards-conformance claim. |
 | FR-6 | Text entry and forms. | Text/search/url/email/tel/number/password inputs; rudimentary textarea path; GET/POST. Done commits and submits immediately. No checkbox/radio/select/file or multipart flow. |
 | FR-7 | History and absolute scroll restoration. | Desktop verified, including repeated instant Back/Forward and fragment entries. Live cache includes source and reader state; reflow invalidates stale cached layouts. |
-| FR-8 | New/switch/close tabs and tab switcher. | Desktop verified; closing the final tab resets to Home. Inactive tabs store navigation metadata; sessions are not persisted across restarts. |
+| FR-8 | New/switch/close tabs and tab switcher. | Desktop verified; closing the final tab resets to Home. Inactive tabs store navigation metadata; sessions are checkpointed in `session.tsv` and resumed after restart. Crash recovery uses the last written checkpoint; live DOM state is not persisted. |
 | FR-9 | Address/search input with caret, suggestions, Shift and symbols. | Desktop verified. Suggestions come from bookmarks and recent visits. |
 | FR-10 | Bookmarks, recent history, saved pages. | Persistent lists; bookmark ordering/removal and folding Home sections implemented. One default bookmark is seeded once. Saves are HTML-only. |
 | FR-11 | Reading view and night mode. | Implemented; reading view survives live-cache restoration/reflow. Extraction can choose the wrong block. |

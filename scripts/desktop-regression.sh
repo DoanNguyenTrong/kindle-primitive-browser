@@ -370,6 +370,23 @@ scroll 200
 visible a[href=\"kb:quickclose\"]
 quit" "[visible] a[href=\"kb:quickclose\"]: 0"
 
+# The menu's Exit button leaves the browser (its tabs are kept for next time).
+run menu_exit_control_visible "open kbp://home
+action menu
+visible a[href=\"kb:exit\"]
+quit" "[visible] a[href=\"kb:exit\"]: 1"
+
+# The open tabs come back after leaving the browser: the active tab, its history, and the tab count.
+run session_tabs_survive_restart "open $BASE/plain.html
+action newtab
+open $BASE/index.html
+restart
+assert url $BASE/index.html
+assert tabs 2
+back
+assert url kbp://home
+quit" "[assert] url $BASE/index.html: PASS" "[assert] tabs 2: PASS" "[assert] url kbp://home: PASS"
+
 # The keyboard's third layer: "#+=" from the symbols layer, and "123" back.
 run keyboard_third_symbol_layer "open kbp://home
 action addr

@@ -380,7 +380,8 @@ fn main() {
     b.set_device(Box::new(device::KindleDevice));
 
     let t0 = Instant::now();
-    b.open(&start);
+    // Resumes the tabs saved when the browser last left; `start` only when there are none.
+    b.resume(&start);
     let u = b.frame();
     shared.borrow_mut().display.show(&u);
     log(&format!("ready in {:?}: {}", t0.elapsed(), b.url()));

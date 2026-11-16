@@ -11,6 +11,7 @@ const POWERD: &str = "com.lab126.powerd";
 const WIFID: &str = "com.lab126.wifid";
 const CMD: &str = "com.lab126.cmd";
 const BATTERY_SYSFS: &str = "/sys/class/power_supply/max77796-battery/capacity";
+const CHARGING_SYSFS: &str = "/sys/class/power_supply/max77796-charger/charging";
 
 /// Reads and sets the Kindle's frontlight, warmth, battery, Wi-Fi and clock.
 pub struct KindleDevice;
@@ -67,6 +68,13 @@ fn local_time() -> (String, String) {
     }
 }
 
+/// Whether the charger is connected: the property bus first, the charger's own flag otherwise.
+fn charging() -> bool {
+    get_int(POWERD, "isCharging")
+        .or_else(|| std::fs::read_to_string(CHARGING_SYSFS).ok()?.trim().parse().ok())
+        .map_or(false, |v| v != 0)
+}
+
 /// Battery level from the property bus, or from the battery's sysfs node if the bus has none.
 fn battery_level() -> Option<u32> {
     get_int(POWERD, "battLevel").or_else(|| {
@@ -94,11 +102,15 @@ impl DeviceControl for KindleDevice {
         let (clock, date) = local_time();
         let wifi_on = get_int(WIFID, "enable").map_or(false, |v| v != 0);
         let wifi_state = get_text(WIFID, "cmState");
+        let battery = battery_level();
+        let charging = charging();
+        // Written to the launcher log, so the values the panel shows can be checked on the device.
+        eprintln!("[device] battery {battery:?} charging {charging} wifi {wifi_on} state {wifi_state:?}");
         DeviceStatus {
             brightness: get_int(POWERD, "flIntensity").unwrap_or(0).min(LEVEL_MAX),
             warmth: get_int(POWERD, "currentAmberLevel").unwrap_or(0).min(LEVEL_MAX),
-            battery: battery_level(),
-            charging: get_int(POWERD, "isCharging").map_or(false, |v| v != 0),
+            battery,
+            charging,
             wifi_on,
             wifi_state: wifi_label(&wifi_state, wifi_on),
             clock,

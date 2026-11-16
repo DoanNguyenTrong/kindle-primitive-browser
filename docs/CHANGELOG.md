@@ -3,7 +3,7 @@
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/) once a release is tagged; until then the
-workspace version is `0.1.3`.
+workspace version is `0.1.5`.
 
 ## [Unreleased]
 
@@ -15,7 +15,18 @@ workspace version is `0.1.3`.
   closes it. The device values come from the Kindle's system properties (`lipc-get-prop` /
   `lipc-set-prop`, read in `crates/kb-kindle/src/device.rs`); the desktop driver shows defaults
   and its `edge` command opens the panel. The lipc names follow KOReader and are not yet
-  confirmed on the device.
+  confirmed on the device. The top row holds the clock on the left, and on the right the Wi-Fi
+  button (slashed when off) and the battery: a battery drawn to the charge level in black, with the
+  charge number split at the level's edge (white over the black part, black over the white part),
+  and a bolt beside the number while charging. The
+  charging state comes from the Kindle's `isCharging` property, with the charger's sysfs flag as
+  fallback; the launcher log records the battery and charging values each time the panel opens.
+- Sessions: the open tabs, each tab's history and scroll positions, and the active tab are saved
+  whenever a page loads or a tab closes, and when the browser leaves. The next time it opens
+  (from the Kindle library or after a crash), the same tabs come back.
+- Exit in the menu's title strip closes the browser and returns to the Kindle library. The open
+  tabs are kept for the next time. The Kindle has no background app switching here (the framework
+  owns the screen and touch input), so the browser does not stay running behind the library.
 - Keyboard third layer "#+=": the symbols layer has a "#+=" key; the new layer adds brackets,
   `# % ^ * + =`, `_ \ | ~ < > € £ ¥ •`, and more punctuation, with "123" and "ABC" to switch back.
 - The menu title shows the build version ("Menu  v0.1.1"). Each device build is a new patch
@@ -46,7 +57,7 @@ workspace version is `0.1.3`.
   visible controls; failures terminate the scenario.
 - Documentation set in `docs/`: requirements, system architecture, test and validation
   pipeline, and this changelog.
-- Desktop regression suite `scripts/desktop-regression.sh` (65 scenarios on local fixtures,
+- Desktop regression suite `scripts/desktop-regression.sh` (67 scenarios on local fixtures,
   including 13 navigation/state/sheet cases; opt-in live-site checks with `--network`).
 - Display sheet (menu > Display): text size steps (80% to 200%) with A- and A+, page width
   (Narrow, Medium, Wide) and Day or Night. Changes apply at once and the sheet stays open.
@@ -69,6 +80,8 @@ workspace version is `0.1.3`.
 - Device log now records resident memory (`rss`) after each action.
 
 ### Changed
+- The menu's title strip has a border on top, between the page and the menu, instead of a line
+  under the title.
 - A finished page gets one full refresh of the screen (GC16 flash), and so does the last image
   arriving. There is no manual refresh control in the browser.
 - The address field and the keyboard redraw with the text waveform (GL16) instead of DU. DU left
@@ -96,7 +109,7 @@ workspace version is `0.1.3`.
 - `kb-app/src/lib.rs` (about 2,100 lines) is split into modules by responsibility: `browser/`
   (state, navigation, loading, tabs, input, actions, library, keyboard, frame, internal pages, driver),
   `settings.rs`, `storage.rs`, `html.rs`, `addr.rs` and `layout.rs`. The behaviour is unchanged:
-  all 65 regression scenarios and the unit tests pass. The layout is described in
+  all 67 regression scenarios and the unit tests pass. The layout is described in
   `docs/02-architecture.md` §2.12.
 - Web pages use the selected 412/600/800 CSS-px width and scale to the panel; default is
   Medium (600). JavaScript viewport dimensions, pixel ratio and basic width queries agree
@@ -239,8 +252,8 @@ workspace version is `0.1.3`.
 - Form controls other than text fields (checkbox, radio, select, file) are not supported.
 - Done/Go commits a page field and submits immediately; multi-field editing, form events,
   and POST reload/history behavior need improvement. POST coverage uses text fields.
-- Saved copies retain HTML only; offline assets, atomic data writes and restart/session
-  restoration are future milestones.
+- Saved copies retain HTML only. Offline assets, atomic data writes and stronger session
+  durability remain future work; basic session checkpoint/resume is implemented.
 - Fragment navigation updates location reads but does not dispatch hashchange/popstate.
 - Blink-level CSS fidelity is limited by Blitz 0.3.0-beta.4.
 

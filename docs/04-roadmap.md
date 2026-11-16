@@ -46,7 +46,8 @@ That makes multi-field forms awkward and is the next priority.
 
 ## Then: durable sessions and offline reading
 
-- Restore tabs and reading positions after a normal restart, with an explicit clear option.
+- Basic session checkpoint/resume is implemented. Harden crash durability and malformed-file
+  handling, improve checkpoint timing, and add an explicit clear-session option.
 - Write session, bookmark, and saved-page metadata atomically and report disk failures.
 - Make offline saves retain their original base URL, reading layout, and required assets.
 - Add find in page with a count and next/previous controls that suit e-ink.

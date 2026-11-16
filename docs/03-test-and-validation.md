@@ -10,7 +10,7 @@ run it, and what result counts as a pass.
 | Level | What it checks | Where it runs | How to run | Pass rule |
 |---|---|---|---|---|
 | L1 Unit | Logic plus fixed fragment layout: URLs, blocklist, script rules, HTML preparation, PNG encoding, anchors | Computer | `cargo test --workspace --exclude kb-kindle` | All tests pass |
-| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing; a gallery of every page and sheet as screenshots | Computer, against local fixtures | `scripts/desktop-regression.sh` | 65 of 65 scenarios pass; screenshots in `artifacts/desktop/` |
+| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing; a gallery of every page and sheet as screenshots | Computer, against local fixtures | `scripts/desktop-regression.sh` | 67 of 67 scenarios pass; screenshots in `artifacts/desktop/` |
 | Test pipeline | All of the above in one run, with the evidence kept in the repository | Computer (and the Kindle build, when cargo-zigbuild is installed) | `scripts/test-all.sh` | `artifacts/REPORT.md` shows every step as PASS |
 | L3 Live-site smoke | Real sites still load (Hacker News, Wikipedia) | Computer, needs internet | `scripts/desktop-regression.sh --network` | Both pass; a failure here is reported but may be the site, not the browser |
 | L4 Launcher | Normal run, killed launcher, and stale-marker recovery | Computer, with stub commands | `scripts/launcher-stub-test.sh` | 7 checks pass |
@@ -49,6 +49,7 @@ Commands used by the suite:
 | `assert url/title <value>`, `assert tabs <count>`, `assert back/forward <true/false>` | fail the process if navigation state differs |
 | `assert scroll <min> <max>`, `assert visible <selector>` | check absolute position or the selected control's screen center |
 | `shot <name>` | wait for pending images and notices, then save the full screen as `$KB_SHOTS/<name>.png` |
+| `restart` | save via Exit, create a new browser instance, and resume the persisted session |
 | `quit` | end |
 
 Environment: `KB_FONTS` (comma-separated font files), `KB_DATA` (data folder, use a fresh
@@ -82,7 +83,7 @@ the server when it finishes. Scenarios:
 | Persistent sheet controls | `menu_controls_stay_visible`, `tab_controls_stay_visible` |
 | Forms and input | `form_get_submit`, `form_post_submit`, `keyboard_caret_insert` |
 | DOM and JavaScript | `dom_apis`, `js_platform_apis` |
-| Reading, saving, bookmarks, tabs | `reading_view`, `save_offline_and_reopen`, `bookmark_add_and_list`, `new_tab_and_switch`, `tabs_sheet_opens`, `home_single_search_box`, `home_section_toggle`, `bookmark_reorder_and_remove` |
+| Reading, saving, bookmarks, tabs | `reading_view`, `save_offline_and_reopen`, `bookmark_add_and_list`, `new_tab_and_switch`, `session_tabs_survive_restart`, `menu_exit_control_visible`, `tabs_sheet_opens`, `home_single_search_box`, `home_section_toggle`, `bookmark_reorder_and_remove` |
 | Menu and settings | `menu_scrolls`, `text_size_and_night`, `address_bar_hint_on_home`, `menu_toggle_keeps_sheet`, `images_on_by_default`, `images_off_skips_fetch`, `menu_images_row_keeps_sheet`, `menu_navigation_closes_sheet`, `menu_exit_button` |
 | Live sites (with `--network`) | `hacker_news`, `wikipedia_article` |
 
@@ -164,7 +165,7 @@ Before a device test, the build must pass in this order:
 
 1. `cargo build --release --workspace` (no warnings from the browser crates);
 2. `cargo test --workspace --exclude kb-kindle`;
-3. `scripts/desktop-regression.sh` (65 of 65);
+3. `scripts/desktop-regression.sh` (67 of 67);
 4. `cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf`;
 5. `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` reports
    `ELF 32-bit LSB executable, ARM, EABI5` and `statically linked`;
@@ -280,7 +281,7 @@ Commands were run with Homebrew Rust/zig on PATH.
 |---|---|
 | `cargo test --workspace --exclude kb-kindle` | PASS, 13 unit tests plus doc-test targets |
 | `cargo build --release --workspace` | PASS; host `rust-objcopy` warns that debug stripping could not load `libLLVM.dylib` |
-| `scripts/desktop-regression.sh` | PASS, 63/65 local scenarios |
+| `scripts/desktop-regression.sh` | PASS, 67/67 local scenarios |
 | `scripts/launcher-stub-test.sh` | PASS, seven checks; intentional killed-launcher messages expected |
 | ARMv7 `cargo zigbuild` from §3.4 | PASS; vendored QuickJS emits four unused-variable warnings |
 | `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` | ELF 32-bit ARM EABI5, statically linked, stripped |

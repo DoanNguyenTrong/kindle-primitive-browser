@@ -2,7 +2,7 @@
 //! the screen after each one to `$KB_OUT` (default `out.png`). Times every action.
 //!
 //!   open <url|text> | tap <x> <y> | scroll <dy> | page <+1|-1> | back | fwd | reload
-//!   action <name> | shot <name> | quit
+//!   action <name> | restart | shot <name> | quit
 //!
 //! `shot <name>` waits for pending images and notices, then saves the full screen as
 //! `$KB_SHOTS/<name>.png` (the regression suite gives each scenario its own folder).
@@ -36,7 +36,14 @@ fn main() -> io::Result<()> {
     }
     let args: Vec<String> = std::env::args().skip(1).collect();
     let start = if args.is_empty() { "kbp://home".to_string() } else { args.join(" ") };
-    timed("open", &mut b, &out, |b| b.open(&start));
+    // Without an address the browser resumes the tabs saved last time, as the device does.
+    timed("open", &mut b, &out, |b| {
+        if args.is_empty() {
+            b.resume(&start)
+        } else {
+            b.open(&start)
+        }
+    });
 
     for line in io::stdin().lock().lines() {
         let line = line?;
@@ -179,6 +186,12 @@ fn main() -> io::Result<()> {
                     }
                     Err(_) => eprintln!("[shot] {name}: KB_SHOTS is not set"),
                 }
+            }
+            "restart" => {
+                // Exit, then open the browser again: the tabs come back.
+                b.action("exit");
+                b = Browser::new(W, H);
+                timed("restart", &mut b, &out, |b| b.resume("kbp://home"));
             }
             "quit" => break,
             "" => continue,
