@@ -75,10 +75,49 @@ observations are in [device notes](docs/device-notes.md).
 
 ## Limits
 
-The JavaScript runtime supports a subset of the browser APIs. ES modules, XMLHttpRequest,
-WebSockets, workers, canvas, WebGL, audio and video are not available, and `fetch` blocks under its
-Promise. Web storage is in memory. Modern web apps will not work. See
-[requirements](docs/01-requirements.md) for the full list.
+Primitive Browser is for reading and reference pages, not web apps.
+
+**Not supported**
+
+- Modern web apps that need ES modules (`import`), WebSockets, service workers, workers, canvas,
+  WebGL, audio or video. Audio and video are not planned.
+- `XMLHttpRequest`. `fetch` exists, but it runs synchronously under a Promise, so the page waits for it.
+- `document.write` and full Web Components (Shadow DOM).
+
+**Partly supported**
+
+- **Forms:** text fields, GET and POST, Enter submits. Checkboxes, radio buttons and selects are missing.
+- **Storage:** `localStorage` and `sessionStorage` are in memory and last for one page only.
+- **Timers and observers:** `setInterval` runs once. `MutationObserver` and the other observers are stubs.
+- **History:** `history.pushState` exists, but `popstate` and `hashchange` events are not sent.
+
+**On the Kindle**
+
+- Verified on the Oasis 3 only.
+- Pages took 10 to 36 seconds to load in the logged sessions.
+- A page turn takes about one second to draw.
+- Peak memory reached 163 MB in one session.
+
+See [requirements](docs/01-requirements.md) for the full list.
+
+## Roadmap
+
+Planned in this order. Details are in the [roadmap](docs/04-roadmap.md) and [device support](docs/DEVICES.md).
+
+- [ ] Scripts on or off per site, with `<noscript>` content shown when they are off
+- [ ] Complete forms: several fields, checkboxes, radio buttons, selects, and submit
+- [ ] Find in page, with e-ink friendly next and previous controls
+- [ ] `XMLHttpRequest` as a thin wrapper over `fetch`
+- [ ] `localStorage` kept per site across restarts
+- [ ] Working `setInterval`, basic `MutationObserver`, and `history.pushState` events
+- [ ] Full `matchMedia` queries
+- [ ] Faster page turns (about one second today)
+- [ ] Find what makes a large page reach 163 MB
+- [ ] A ten-page site matrix, to test these features on real sites
+- [ ] Device profiles for other Kindle models (see [device support](docs/DEVICES.md))
+- [ ] A hardware check for each new model
+
+**Not planned for now:** ES modules, WebSockets, service workers, workers, canvas, WebGL, audio and video.
 
 <details>
 <summary><b>Using the browser</b></summary>
