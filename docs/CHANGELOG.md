@@ -7,6 +7,12 @@ workspace version is `0.1.17`.
 
 ## [Unreleased]
 
+### Changed
+- Licence: MIT (`LICENSE`), set in `Cargo.toml` and the README.
+
+### Removed
+- The bookmark that shipped with the app is gone. A new install starts with no bookmarks.
+
 ### Added
 - Project documentation for publishing: a full README (status, features, install, build, testing,
   structure), `docs/INSTALL.md` for installing the release package without building, `docs/VERSIONING.md`

@@ -12,7 +12,7 @@ yet. See [device support](DEVICES.md). Installing on an unsupported model is at 
 2. **FBInk** installed at `/mnt/us/libkh/bin/fbink`. The FBInk tools come with KPM / KOReader on a
    jailbroken Kindle. The browser draws the screen with this program.
 3. **The release package**, `primitive-browser-<version>.zip`, from the
-   [Releases](https://github.com/OWNER/REPO/releases) page, and its `.sha256` file.
+   [Releases](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases) page, and its `.sha256` file.
 
 ## 1. Check the download
 

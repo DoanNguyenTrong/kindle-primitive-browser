@@ -5,10 +5,8 @@ use std::{fs, path::PathBuf};
 
 use kb_net::store;
 
-pub(crate) const DEFAULT_BOOKMARKS: &[(&str, &str)] = &[(
-    "https://truyendich.space/doc-truyen/pham-nhan-tien-duyen",
-    "Phàm Nhân Tiên Duyên",
-)];
+/// Bookmarks a new install starts with: none. The user adds their own.
+pub(crate) const DEFAULT_BOOKMARKS: &[(&str, &str)] = &[];
 
 pub(crate) const HISTORY_CAP: usize = 300;
 

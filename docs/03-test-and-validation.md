@@ -186,11 +186,11 @@ block a release.
 
 ### Display and touch
 
-- **D-1 (must)** The home screen appears after launch, with the truyendich bookmark tile.
+- **D-1 (must)** The home screen appears after launch, with the bookmark tiles.
   Evidence: `browser/frame.png`, the first `ready` line in the log.
 - **D-2 (must)** Tapping the bookmark tile opens the page. Evidence: log `open` line with the
   page title.
-- **D-3 (must)** On the truyendich page, the mobile-only "continue reading" control is shown
+- **D-3 (must)** On a long article page, the mobile-only "continue reading" control is shown
   and tapping it does what it should. Evidence: photo of the screen; log `tap` lines.
 - **D-4 (must)** A tap on a link navigates; a tap on a button that calls JavaScript does not
   navigate. Evidence: log lines.

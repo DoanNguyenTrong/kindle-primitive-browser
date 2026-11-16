@@ -241,11 +241,11 @@ run address_selected_lists_suggestions "open $BASE/plain.html
 action mark
 open $BASE/article.html
 action addr
-tapsel a[href=\"kb:sugg:1\"]
+tapsel a[href=\"kb:sugg:0\"]
 assert url $BASE/plain.html
 quit" "[assert] url $BASE/plain.html: PASS"
 
-# --- long lists: 40 bookmarks plus the default one -------------------------------
+# --- long lists: 40 bookmarks -------------------------------
 # The address bar lists every bookmark; the list scrolls, and a tap on a row far down opens it.
 SEED=40
 # Rows: 96 px each, so row 30 starts at 2880 px in the list. Scrolling 2200 px brings it into the
@@ -276,10 +276,10 @@ quit" "[visible] a[href=\"kb:sugg:1\"]: 0" "[assert] url $BASE/plain.html?b=37: 
 # Home: the bookmark grid is longer than the screen; it scrolls to the last tile.
 run home_long_grid_scroll "open kbp://home
 count .mark-tile
-visible a[href=\"https://truyendich.space/doc-truyen/pham-nhan-tien-duyen\"]
+visible a[href=\"$BASE/plain.html?b=39\"]
 scroll 3000
-visible a[href=\"https://truyendich.space/doc-truyen/pham-nhan-tien-duyen\"]
-quit" "[count] .mark-tile: 41" "[visible] a[href=\"https://truyendich.space/doc-truyen/pham-nhan-tien-duyen\"]: 0" "[visible] a[href=\"https://truyendich.space/doc-truyen/pham-nhan-tien-duyen\"]: 1"
+visible a[href=\"$BASE/plain.html?b=39\"]
+quit" "[count] .mark-tile: 40" "[visible] a[href=\"$BASE/plain.html?b=39\"]: 0" "[visible] a[href=\"$BASE/plain.html?b=39\"]: 1"
 
 # Bookmark manager: the list scrolls, and a row far down can be removed.
 run bookmarks_long_list_manage "open kbp://bookmarks
@@ -290,7 +290,7 @@ visible a[href=\"kb:rm:0\"]
 visible a[href=\"kb:rm:39\"]
 tapsel a[href=\"kb:rm:39\"]
 count .bm
-quit" "[count] .bm: 41" "[visible] a[href=\"kb:rm:0\"]: 0" "[visible] a[href=\"kb:rm:39\"]: 1" "[count] .bm: 40"
+quit" "[count] .bm: 40" "[visible] a[href=\"kb:rm:0\"]: 0" "[visible] a[href=\"kb:rm:39\"]: 1" "[count] .bm: 40"
 SEED=
 
 # Cancel leaves the address bar and returns to the page, unchanged.

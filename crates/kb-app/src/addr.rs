@@ -80,9 +80,9 @@ mod tests {
 
     #[test]
     fn url_splits_into_host_and_path_for_the_address_bar() {
-        let (host, path) = split_url("https://truyendich.space/doc-truyen/x?y=1");
-        assert_eq!(host, "truyendich.space");
-        assert_eq!(path, "/doc-truyen/x?y=1");
+        let (host, path) = split_url("https://example.com/doc/x?y=1");
+        assert_eq!(host, "example.com");
+        assert_eq!(path, "/doc/x?y=1");
         assert_eq!(
             split_url("https://example.org"),
             ("example.org".to_string(), String::new())
