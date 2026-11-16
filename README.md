@@ -59,7 +59,8 @@ Menu also keeps Exit browser visible above its scrolling body.
 ```sh
 cargo test --workspace --exclude kb-kindle
 cargo build --release -p kb-desktop
-scripts/desktop-regression.sh       # 42 local scenarios; --network adds two live-site checks
+scripts/desktop-regression.sh       # 61 local scenarios with screenshots; --network adds two live-site checks
+scripts/test-all.sh                 # every check, with evidence kept in artifacts/ (see REPORT.md)
 scripts/launcher-stub-test.sh       # seven launcher checks with stubs
 ```
 

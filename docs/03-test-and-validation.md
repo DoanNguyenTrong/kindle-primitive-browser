@@ -10,7 +10,8 @@ run it, and what result counts as a pass.
 | Level | What it checks | Where it runs | How to run | Pass rule |
 |---|---|---|---|---|
 | L1 Unit | Logic plus fixed fragment layout: URLs, blocklist, script rules, HTML preparation, PNG encoding, anchors | Computer | `cargo test --workspace --exclude kb-kindle` | All tests pass |
-| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing | Computer, against local fixtures | `scripts/desktop-regression.sh` | 42 of 42 scenarios pass |
+| L2 Desktop regression | Browser behaviour end to end: navigation, forms, DOM and JavaScript APIs, tabs, bookmarks, reading view, menus, keyboard, scrolling, hit testing; a gallery of every page and sheet as screenshots | Computer, against local fixtures | `scripts/desktop-regression.sh` | 61 of 61 scenarios pass; screenshots in `artifacts/desktop/` |
+| Test pipeline | All of the above in one run, with the evidence kept in the repository | Computer (and the Kindle build, when cargo-zigbuild is installed) | `scripts/test-all.sh` | `artifacts/REPORT.md` shows every step as PASS |
 | L3 Live-site smoke | Real sites still load (Hacker News, Wikipedia) | Computer, needs internet | `scripts/desktop-regression.sh --network` | Both pass; a failure here is reported but may be the site, not the browser |
 | L4 Launcher | Normal run, killed launcher, and stale-marker recovery | Computer, with stub commands | `scripts/launcher-stub-test.sh` | 7 checks pass |
 | L5 Device validation | The product on the Kindle: touch, display, performance, memory, durability | Kindle Oasis 3 | Checklist in §3.5 | All must-pass items pass; evidence attached |
@@ -42,15 +43,17 @@ Commands used by the suite:
 | `action <name>` | run a named browser action (`mark`, `menu`, `reader`, `night`, `display`, `font:+`, `save`, `saved`, `marks`, `tabs`, `newtab`, `closemenu` ...) |
 | `back`, `fwd`, `reload`, `tabstep <±1>` | navigation |
 | `text <selector>` | print an element's text (`[text] <sel>: ...`) |
-| `count <selector>`, `visible <selector>` | matching and displayed element counts |
+| `count <selector>` | number of matching elements |
+| `visible <selector>` | 1 when the first match's centre is on the part of the screen the user sees (below the address bar and above the toolbar, the open sheet's body, or the keyboard's list above the keys); 0 when scrolled away or hidden |
 | `where <selector>`, `linkat <x> <y>` | debugging: screen centre of an element; link under a point |
 | `assert url/title <value>`, `assert tabs <count>`, `assert back/forward <true/false>` | fail the process if navigation state differs |
 | `assert scroll <min> <max>`, `assert visible <selector>` | check absolute position or the selected control's screen center |
+| `shot <name>` | wait for pending images and notices, then save the full screen as `$KB_SHOTS/<name>.png` |
 | `quit` | end |
 
 Environment: `KB_FONTS` (comma-separated font files), `KB_DATA` (data folder, use a fresh
-temporary folder per test), `KB_OUT` (frame PNG), `KB_PROGRESS=1` (print load progress),
-`KB_KEEP_FIRST=1` (keep the frame drawn right after an action).
+temporary folder per test), `KB_OUT` (frame PNG), `KB_SHOTS` (folder for `shot` PNGs),
+`KB_PROGRESS=1` (print load progress), `KB_KEEP_FIRST=1` (keep the frame drawn right after an action).
 
 ### 3.2.2 Fixtures
 
@@ -117,6 +120,32 @@ are covered by L2; hardware behavior is covered only by L5.
 - The desktop engine is faster than the device. Timings on the computer are a lower bound.
 - Live-site results depend on the sites, which change.
 
+### 3.2.6 Test pipeline and artifacts
+
+`scripts/test-all.sh` runs every computer check in order and keeps the evidence in the
+repository, so a reviewer can see what was tested without rebuilding anything:
+
+| Path | Contents |
+|---|---|
+| `artifacts/REPORT.md` | One row per step: build, unit tests, desktop regression, launcher tests, Kindle build; each with PASS, FAIL or SKIP and a link to its log |
+| `artifacts/build.log`, `artifacts/unit/unit-tests.log` | Workspace build and unit test output |
+| `artifacts/desktop/INDEX.md` | One row per regression scenario: result, final screen, named shots |
+| `artifacts/desktop/<scenario>/` | `script.txt` (the commands), `log.txt` (driver output), `final.png` (screen at the end), and named shots from `shot` commands |
+| `artifacts/desktop/gallery_pages/` | Named full-screen shots of every page and sheet: home, bookmarks, saved pages, menu, Display, tabs, reader, error page, keyboard |
+| `artifacts/launcher/launcher-stub-test.log` | Launcher checks |
+| `artifacts/device/arm-build.log` | Kindle cross-build: binary size, and whether the copy on the mounted Kindle matches |
+
+Run `scripts/test-all.sh` (add `--network` for the live-site checks). The exit status is 0 only
+when every required step passes. The Kindle build is reported as SKIP, not FAIL, when
+`cargo-zigbuild` is not installed.
+
+Artifacts are regenerated on every run and committed with the change that produced them. Each
+run replaces the previous scenario folders, so `git diff` on `artifacts/` shows what changed on
+screen. A screenshot that changed without a matching code change is a regression to investigate.
+
+The screenshots are desktop renders. They show layout, text and state, not the e-ink look; the
+device checklist in §3.5 still covers how the screen looks on the panel.
+
 ## 3.3 Launcher tests
 
 `scripts/launcher-stub-test.sh` replaces the Kindle's `start`, `stop` and the browser with
@@ -135,7 +164,7 @@ Before a device test, the build must pass in this order:
 
 1. `cargo build --release --workspace` (no warnings from the browser crates);
 2. `cargo test --workspace --exclude kb-kindle`;
-3. `scripts/desktop-regression.sh` (42 of 42);
+3. `scripts/desktop-regression.sh` (61 of 61);
 4. `cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf`;
 5. `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` reports
    `ELF 32-bit LSB executable, ARM, EABI5` and `statically linked`;
@@ -251,7 +280,7 @@ Commands were run with Homebrew Rust/zig on PATH.
 |---|---|
 | `cargo test --workspace --exclude kb-kindle` | PASS, 13 unit tests plus doc-test targets |
 | `cargo build --release --workspace` | PASS; host `rust-objcopy` warns that debug stripping could not load `libLLVM.dylib` |
-| `scripts/desktop-regression.sh` | PASS, 42/42 local scenarios |
+| `scripts/desktop-regression.sh` | PASS, 61/61 local scenarios |
 | `scripts/launcher-stub-test.sh` | PASS, seven checks; intentional killed-launcher messages expected |
 | ARMv7 `cargo zigbuild` from §3.4 | PASS; vendored QuickJS emits four unused-variable warnings |
 | `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` | ELF 32-bit ARM EABI5, statically linked, stripped |

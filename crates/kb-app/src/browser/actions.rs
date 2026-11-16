@@ -1,0 +1,220 @@
+//! Browser actions named by `kb:` links: the menu, the Display settings, and the toolbar.
+
+use super::*;
+
+pub(super) fn stays_open(href: &str) -> bool {
+    matches!(
+        href,
+        "kb:night"
+            | "kb:nighton"
+            | "kb:nightoff"
+            | "kb:images"
+            | "kb:mark"
+            | "kb:save"
+            | "kb:clearcache"
+            | "kb:clearhistory"
+            | "kb:display"
+    ) || href.starts_with("kb:font:")
+        || href.starts_with("kb:width:")
+        || href.starts_with("kb:closetab:")
+}
+
+impl Browser {
+    pub(super) fn chrome_action(&mut self, href: &str) {
+        eprintln!(
+            "[ui] action {href} (sheet={:?}, page={}, url={})",
+            self.sheet,
+            self.page.is_some(),
+            self.url
+        );
+        // Sheet rows and tiles can link straight to a page (Bookmarks, Saved pages, Home).
+        if href.starts_with("kbp://") || href.starts_with("http://") || href.starts_with("https://")
+        {
+            self.open(href);
+            return;
+        }
+        if let Some(n) = href
+            .strip_prefix("kb:rm:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            if n < self.bookmarks.len() {
+                self.bookmarks.remove(n);
+                write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
+                self.refresh_internal();
+            }
+            return;
+        }
+        if let Some(n) = href
+            .strip_prefix("kb:bmup:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            if n > 0 && n < self.bookmarks.len() {
+                self.bookmarks.swap(n - 1, n);
+                write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
+                self.refresh_internal();
+            }
+            return;
+        }
+        if let Some(n) = href
+            .strip_prefix("kb:bmdown:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            if n + 1 < self.bookmarks.len() {
+                self.bookmarks.swap(n, n + 1);
+                write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
+                self.refresh_internal();
+            }
+            return;
+        }
+        if let Some(step) = href.strip_prefix("kb:font:") {
+            self.step_text(if step == "+" { 1 } else { -1 });
+            return;
+        }
+        if let Some(w) = href
+            .strip_prefix("kb:width:")
+            .and_then(|s| s.parse::<u32>().ok())
+        {
+            self.set_width(w);
+            return;
+        }
+        if let Some(which) = href.strip_prefix("kb:homeshow:") {
+            match which {
+                "bm" => self.settings.home_bookmarks_open = !self.settings.home_bookmarks_open,
+                _ => self.settings.home_recent_open = !self.settings.home_recent_open,
+            }
+            self.settings.save();
+            self.refresh_internal();
+            return;
+        }
+        if let Some(n) = href
+            .strip_prefix("kb:tab:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            self.switch_tab(n);
+            return;
+        }
+        if let Some(n) = href
+            .strip_prefix("kb:closetab:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            self.close_tab(n);
+            return;
+        }
+        if let Some(n) = href
+            .strip_prefix("kb:sugg:")
+            .and_then(|s| s.parse::<usize>().ok())
+        {
+            if let Some((url, _, _)) = self.suggestions.get(n).cloned() {
+                self.keyboard = false;
+                self.open(&url);
+            }
+            return;
+        }
+        match href {
+            "kb:addr" => self.enter_keyboard(),
+            "kb:reload" => self.reload(),
+            "kb:back" => self.back(),
+            "kb:fwd" => self.forward(),
+            "kb:home" => self.open("kbp://home"),
+            "kb:mark" => self.toggle_bookmark(),
+            "kb:menu" => self.show_sheet(Sheet::Menu),
+            "kb:tabs" => self.show_sheet(Sheet::Tabs),
+            "kb:newtab" => self.new_tab(),
+            "kb:closemenu" => {
+                self.sheet = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
+            "kb:reader" => {
+                self.toggle_reader();
+            }
+            "kb:save" => self.save_offline(),
+            "kb:marks" => self.open("kbp://bookmarks"),
+            "kb:saved" => self.open("kbp://saved"),
+            "kb:display" => self.show_sheet(Sheet::Display),
+            "kb:images" => {
+                self.settings.images = !self.settings.images;
+                self.settings.save();
+                // Rebuild the page: turning images on fetches them, turning them off drops them.
+                self.reflow();
+                // The menu shows the new state; a notice would cover it.
+                if self.sheet.is_none() {
+                    self.notify(if self.settings.images {
+                        "Images on"
+                    } else {
+                        "Images off"
+                    });
+                }
+            }
+            "kb:night" => {
+                self.settings.night = !self.settings.night;
+                self.set_night(self.settings.night);
+            }
+            "kb:nighton" => self.set_night(true),
+            "kb:nightoff" => self.set_night(false),
+            "kb:clearhistory" => {
+                self.visits.clear();
+                write_pairs(&data_file("history.tsv"), &self.visits);
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+                self.notify("History cleared");
+            }
+            "kb:clearcache" => {
+                store::cache_clear();
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+                self.sheet_layer = None;
+                self.notify("Cache cleared");
+            }
+            "kb:exit" => {
+                kb_net::save_cookies();
+                self.exit = true;
+            }
+            _ => {}
+        }
+    }
+
+    /// Move one step along `TEXT_STEPS` (-1 smaller, +1 larger) and reflow the page.
+    pub(super) fn step_text(&mut self, dir: i32) {
+        let cur = TEXT_STEPS
+            .iter()
+            .position(|&p| p == self.settings.text_pct)
+            .unwrap_or(2) as i32;
+        let next = (cur + dir).clamp(0, TEXT_STEPS.len() as i32 - 1) as usize;
+        if next as i32 == cur {
+            return;
+        }
+        self.settings.text_pct = TEXT_STEPS[next];
+        self.settings.save();
+        self.reflow();
+    }
+
+    /// Choose the page width (one of `PAGE_WIDTHS`) and reflow the page.
+    pub(super) fn set_width(&mut self, width: u32) {
+        if !PAGE_WIDTHS.contains(&width) || width == self.settings.page_width {
+            return;
+        }
+        self.settings.page_width = width;
+        self.settings.save();
+        self.reflow();
+    }
+
+    /// Short label for the menu row: "Medium, 100%".
+    pub(super) fn display_summary(&self) -> String {
+        format!(
+            "{}, {}%",
+            width_name(self.settings.page_width),
+            self.settings.text_pct
+        )
+    }
+
+    pub(super) fn set_night(&mut self, on: bool) {
+        self.settings.night = on;
+        self.settings.save();
+        self.touch(0, self.height, Wave::Flash);
+        if self.sheet.is_none() {
+            self.notify(if on {
+                "Night mode on"
+            } else {
+                "Night mode off"
+            });
+        }
+    }
+}

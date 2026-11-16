@@ -8,6 +8,21 @@ workspace version is `0.1.0`.
 ## [Unreleased]
 
 ### Added
+- Long-list tests: 40 seeded bookmarks (the `SEED` option of the regression runner) cover the
+  address suggestions (scroll, and a tap far down the list), filtering by typing, the home grid
+  scrolled to its last tile, and the bookmark manager (scroll, and remove a row far down).
+  `gallery_long_lists` saves the scrolled states as screenshots.
+- Address bar selection: opening the address on a page selects the URL, so the first key
+  replaces it instead of appending. While it is selected, the suggestions list the bookmarks and
+  recent pages. Tapping a character places the caret and clears the selection.
+- Test pipeline `scripts/test-all.sh`: build, unit tests, desktop regression, launcher tests and
+  the Kindle build, with the evidence kept in `artifacts/` and a summary in `artifacts/REPORT.md`.
+- Screenshots in the repository: each regression scenario has a folder (`script.txt`, `log.txt`,
+  `final.png`); the `gallery_pages` scenario captures every page and sheet as named shots;
+  `artifacts/desktop/INDEX.md` lists them. The driver gained a `shot <name>` command.
+- Menu redesigned as a four-column grid of tiles (PAGE, SAVE, BROWSER), with a state caption on
+  each tile. Night mode is removed from the menu (it is in Display), and the menu no longer has a
+  Done button; tap the page above the menu to close it. Exit browser stays in the title strip.
 - Dependable reading/navigation milestone with explicit acceptance criteria in
   `docs/04-roadmap.md`, plus a Kindle interaction and e-ink guide in `docs/05-ui-ux.md`.
 - Article section links: encoded Unicode IDs, legacy named anchors, empty/top fragments,
@@ -18,7 +33,7 @@ workspace version is `0.1.0`.
   visible controls; failures terminate the scenario.
 - Documentation set in `docs/`: requirements, system architecture, test and validation
   pipeline, and this changelog.
-- Desktop regression suite `scripts/desktop-regression.sh` (42 scenarios on local fixtures,
+- Desktop regression suite `scripts/desktop-regression.sh` (61 scenarios on local fixtures,
   including 13 navigation/state/sheet cases; opt-in live-site checks with `--network`).
 - Display sheet (menu > Display): text size steps (80% to 200%) with A- and A+, page width
   (Narrow, Medium, Wide) and Day or Night. Changes apply at once and the sheet stays open.
@@ -41,6 +56,25 @@ workspace version is `0.1.0`.
 - Device log now records resident memory (`rss`) after each action.
 
 ### Changed
+- Address bar while typing: the URL field is in the same 96 px bar as the page's address bar,
+  with Cancel where the reload button sits. The Go button in the header is removed; the keyboard's
+  Go key submits. The suggestions are a separate list between the bar and the keys, and they
+  scroll with a swipe (the bar and the keys stay in place). The list keeps up to 60 matches,
+  bookmarks first (the list was limited to 6).
+- The driver's `visible` check now means the element's centre is on the part of the screen the
+  user sees: below the address bar and above the toolbar, the open sheet's body, or the keyboard's
+  list above the keys. It used to count any element with a box, including elements scrolled away
+  or under the keys.
+- Home screen redesigned: bookmarks as a four-column grid of tiles (the menu's tile style), recent
+  pages as rows with a title and a URL, and each section has a text control, Show or Hide, in
+  place of the chevron. Empty states are padded. "Manage" opens the bookmark page. The two
+  bottom buttons are removed (the menu has Bookmarks and Saved pages).
+- Display and Tabs sheets no longer have a Done button. Tap the page above a sheet to close it.
+- `kb-app/src/lib.rs` (about 2,100 lines) is split into modules by responsibility: `browser/`
+  (state, navigation, loading, tabs, input, actions, library, keyboard, frame, internal pages, driver),
+  `settings.rs`, `storage.rs`, `html.rs`, `addr.rs` and `layout.rs`. The behaviour is unchanged:
+  all 61 regression scenarios and the unit tests pass. The layout is described in
+  `docs/02-architecture.md` §2.12.
 - Web pages use the selected 412/600/800 CSS-px width and scale to the panel; default is
   Medium (600). JavaScript viewport dimensions, pixel ratio and basic width queries agree
   with the renderer instead of always reporting 412 px. Chrome and internal pages keep
@@ -61,6 +95,50 @@ workspace version is `0.1.0`.
 - Menu and tab sheets scroll.
 
 ### Fixed
+- JavaScript-heavy pages (React and Next.js, jQuery) failed or went blank. Found on tinhte.vn
+  from the device log and fixed at the cause, each with a regression check (`dom_api_for_pages`):
+  - `innerHTML` assignments did nothing: the document had no HTML parser for fragments. The
+    Blitz HTML parser is now installed.
+  - `getAttribute` returned `undefined` for a missing attribute, so every `appendChild` was taken
+    for a fragment and dropped (introduced earlier in this release). It returns `null`.
+  - Text nodes were hidden from scripts (`childNodes`, `firstChild`, `nextSibling`), so React's
+    hydration never matched the server markup (React error 418) and the page was cleared.
+  - Missing DOM: `document.nodeType`, `URL`, `referrer`, `currentScript`, fragments, `cloneNode`
+    (native, deep), `attributes`, `ownerDocument`, `isEqualNode`, `dispatchEvent`, siblings,
+    `HTML*Element`/`Text`/`SVGElement` classes for `instanceof`, `performance.clearMarks`, layout
+    stubs. jQuery 1.11 failed on the first of these (`createElement` of undefined).
+  - `fetch` ignored its method, headers and body, did not resolve relative addresses, and had no
+    response content type. It now sends them through a new `kb_net::request`.
+  - A script answered with an HTML page (an error page) was run as JavaScript; it is skipped.
+  - Removed nodes reached by later script calls made Blitz panic, which replaced the whole page
+    with an error page. The DOM calls and each page-building step are contained, and Blitz is
+    patched to ignore removed nodes (`vendor/blitz-dom-0.3.0-beta.4`, see `vendor/README.md`).
+  - Errors from event handlers, timers and `console.error` now log their first stack frames.
+- Slow page loads (about 8 s on the device for a script-heavy page): external scripts were
+  fetched one at a time. They are now fetched six at a time and still run in document order
+  (regression `scripts_run_in_document_order`). On the Mac, tinhte.vn took 14 to 24 s before and 4 to 6 s after (network-dependent).
+- Saved pages did not load their own scripts and stylesheets (the device log showed
+  `kbp://saved/...: unsupported scheme`). The saved-page metadata is `url title`, but the file
+  writer turned the tab between them into a space, so the lookup found no URL and the page fell
+  back to its internal address. The metadata now splits on the first space, which reads the
+  entries already saved on the device (regression `saved_page_runs_its_scripts`).
+- A page restored with Back took its internal address as its base for relative links, so its
+  links stopped resolving. Internal addresses no longer change the base; only web addresses do
+  (unit test `internal_location_keeps_the_web_base_for_relative_links`, regression
+  `saved_page_links_after_restore`).
+- Pages that check for IndexedDB failed with `ReferenceError: IDBIndex is not defined`. The
+  IndexedDB names now exist, and opening a database fails quietly (regression
+  `indexeddb_feature_checks_do_not_throw`).
+- Address suggestions showed the bookmark icon for recent pages too. Recent pages now have their
+  own icon.
+- JavaScript error reports now include the first three stack frames, so the device log shows
+  where an error was thrown (script URL and line).
+- Tapping a suggestion while typing an address did nothing: suggestion rows are browser actions,
+  but the keyboard sent them to the key handler, which ignored them. They now open the page
+  (regression `suggestion_tap_navigates`).
+- Menu rows for Bookmarks, Saved pages and other `kbp://` pages did nothing: the action table
+  ignored them. Sheet links to internal and web pages now open them (regression
+  `menu_items_navigate` checks every tile).
 - Page scripts saw a stale `location.href` after a fragment jump: `href` is a getter, which
   `Object.assign` does not copy. It is now set explicitly (regression `fragment_updates_location_href`).
 - Switching tabs cleared the page but not its HTML, so a cancelled load left the previous tab's
@@ -121,6 +199,13 @@ workspace version is `0.1.0`.
   example `[ui] sheet=Menu tap (x,y) -> Some("kb:night")` and `[ui] action kb:night (sheet=…)`.
 
 ### Known issues
+- A site's own poll widget (tinhte.vn) still reports `Could not find job from response`: its
+  batching client does not find its job in the batch reply. The article renders; only the poll
+  is affected. Not investigated further.
+- Layout queries from scripts (`getBoundingClientRect`, `offsetWidth`, ...) report zero: the page
+  layout is not exposed to scripts. Code that only measures and continues works.
+- The desktop driver's `tapsel` cannot target an inline link (a link inside a sentence): the
+  element has no box of its own. Taps on the device still work for inline links.
 - Stock Kindle keyboard access remains unknown; the browser uses its own keyboard.
 - Latency, memory and e-ink behaviour are not yet measured on the device.
 - Touch gestures and the progress strip have not been confirmed on the touch panel.

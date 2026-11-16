@@ -211,3 +211,33 @@ Hashchange/popstate dispatch and script-driven location navigation are not imple
 Persistence is separate: tab sessions are in-memory; settings/bookmark/history/saved writes
 are best-effort. Atomic writes, surfaced storage failures, complete offline archives and
 restart restoration are future work in the roadmap.
+
+## 2.12 `kb-app` module layout
+
+`kb-app` is the browser's logic and its own interface. The crate root only declares modules and
+re-exports the API the drivers use. `Browser` is defined in `browser/mod.rs`; each other file in
+`browser/` holds one part of `impl Browser`, grouped by responsibility.
+
+| Module | Responsibility |
+|---|---|
+| `lib.rs` | Module list and the public re-exports (`Browser`, `Update`, `Wave`, layout constants, `normalize`, `width_name`, `encode_png`) |
+| `browser/mod.rs` | `Browser` state, construction, and the read-only accessors used by the drivers |
+| `browser/nav.rs` | Opening pages, history (Back and Forward), fragments within a page, reflow after a setting change |
+| `browser/loading.rs` | Loading and building documents: fetch with progress, forms (POST), reader view, recording visits |
+| `browser/tabs.rs` | Tabs: switching, creating, closing; each tab keeps its own history, scroll and source |
+| `browser/input.rs` | Taps, long presses, scrolling, the press highlight, hit testing for bars, sheets, keyboard and page |
+| `browser/actions.rs` | Actions named by `kb:` links: menu, Display settings (text size, width, day or night), toolbar |
+| `browser/library.rs` | Bookmarks, visit history, saved pages |
+| `browser/keyboard.rs` | On-screen keyboard: key layers, typing, caret, address suggestions |
+| `browser/frame.rs` | Composing the screen: bars, sheets, notices, cached layers, the notice timer, PNG output |
+| `browser/internal.rs` | Internal pages: home, bookmarks, saved pages |
+| `browser/driver.rs` | Helpers for the desktop driver and the regression suite (find, tap and read elements on screen) |
+| `browser/types.rs` | Shared types: updates, cached layers, page and tab state, sheets |
+| `settings.rs` | Reading settings, the choices they offer, and `settings.tsv` |
+| `storage.rs` | Data files: bookmarks, history, settings, saved pages (tab-separated) |
+| `html.rs` | Escaping, and the page-level CSS added from the settings |
+| `addr.rs` | Typed input to URL, URL splitting, same-document comparison |
+| `layout.rs` | Layout constants in device pixels, and notice placement |
+| `ui.rs` | The stylesheet and the HTML for every screen the browser draws itself (§2.6) |
+
+Each module starts with a `//!` line that states its job. Tests sit beside the code they check.

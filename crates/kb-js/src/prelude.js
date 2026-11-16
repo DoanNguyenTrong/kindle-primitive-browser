@@ -15,6 +15,18 @@
     return w;
   }
 
+  // Resolve a URL attribute against the page address (enough for script and image sources).
+  function resolveUrl(value) {
+    if (value === null) return '';
+    const v = String(value);
+    if (/^[a-z][a-z0-9+.-]*:/i.test(v)) return v;
+    const base = String(globalThis.__kbUrl || '');
+    if (v.startsWith('//')) return base.split(':')[0] + ':' + v;
+    const origin = base.split('/').slice(0, 3).join('/');
+    if (v.startsWith('/')) return origin + v;
+    return base.split('?')[0].split('#')[0].replace(/[^/]*$/, '') + v;
+  }
+
   class Element {
     constructor(id) { this.__id = id; }
     get tagName() { return N.tag(this.__id) || ''; }
@@ -31,6 +43,23 @@
     get innerHTML() { return this.textContent; }
     set innerHTML(v) { N.setHtml(this.__id, String(v)); }
     get parentNode() { return wrap(N.parent(this.__id)); }
+    get nodeType() { return N.nodeType(this.__id); }
+    get ownerDocument() { return globalThis.document; }
+    // Named access to the attributes (attributes[name] is an Attr-like object, or undefined).
+    get attributes() {
+      const el = this;
+      return new Proxy({}, {
+        get(_t, k) {
+          if (typeof k !== 'string') return undefined;
+          const v = el.getAttribute(k);
+          return v === null ? undefined : { name: k, nodeName: k, value: v, nodeValue: v };
+        },
+        has(_t, k) { return typeof k === 'string' && el.getAttribute(k) !== null; },
+      });
+    }
+    get childNodes() { return N.childNodes(this.__id).map(wrap); }
+    get firstChild() { return this.childNodes[0] ?? null; }
+    get lastChild() { const c = this.childNodes; return c.length ? c[c.length - 1] : null; }
     get parentElement() { return this.parentNode; }
     get children() { return N.children(this.__id).map(wrap); }
     get firstElementChild() { return this.children[0] ?? null; }
@@ -48,12 +77,25 @@
         },
       });
     }
-    getAttribute(n) { return N.getAttr(this.__id, String(n)); }
+    // A missing attribute is null, as in the DOM (the host reports it as undefined).
+    getAttribute(n) { const v = N.getAttr(this.__id, String(n)); return v === undefined || v === null ? null : v; }
     setAttribute(n, v) { N.setAttr(this.__id, String(n), String(v)); }
+    // Script and image sources come back as absolute addresses, as they do in a browser.
+    get src() { return resolveUrl(this.getAttribute('src')); }
+    set src(v) { this.setAttribute('src', String(v)); }
     removeAttribute(n) { N.delAttr(this.__id, String(n)); }
     hasAttribute(n) { return N.getAttr(this.__id, String(n)) !== null; }
-    appendChild(c) { N.append(this.__id, c.__id); return c; }
-    insertBefore(c, r) { N.insertBefore(this.__id, c.__id, r ? r.__id : -1); return c; }
+    // A document fragment is a detached holder; its children move into the parent when it is inserted.
+    appendChild(c) {
+      if (c.getAttribute('data-kb-fragment') !== null) { for (const k of N.children(c.__id)) N.append(this.__id, k); return c; }
+      N.append(this.__id, c.__id); return c;
+    }
+    insertBefore(c, r) {
+      if (c.getAttribute('data-kb-fragment') !== null) { for (const k of N.children(c.__id)) N.insertBefore(this.__id, k, r ? r.__id : -1); return c; }
+      N.insertBefore(this.__id, c.__id, r ? r.__id : -1); return c;
+    }
+    // A copy of the element (its attributes and, when deep, its content), detached from the page.
+    cloneNode(deep) { const id = N.clone(this.__id, !!deep); return id < 0 ? null : wrap(id); }
     removeChild(c) { N.remove(c.__id); return c; }
     remove() { N.remove(this.__id); }
     append(...nodes) {
@@ -70,6 +112,59 @@
       const m = listeners.get(this.__id);
       if (m && m[type]) m[type] = m[type].filter((f) => f !== fn);
     }
+    dispatchEvent(ev) { dispatchTo(this.__id, ev); return !ev.defaultPrevented; }
+    // Layout queries: this browser does not run a layout the page can read, so these report zero
+    // size and no scrolling. Code that only checks for them, or that measures and continues, works.
+    getBoundingClientRect() { return { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }; }
+    getClientRects() { return []; }
+    get offsetWidth() { return 0; }
+    get offsetHeight() { return 0; }
+    get offsetTop() { return 0; }
+    get offsetLeft() { return 0; }
+    get clientWidth() { return 0; }
+    get clientHeight() { return 0; }
+    get scrollWidth() { return 0; }
+    get scrollHeight() { return 0; }
+    get scrollTop() { return 0; }
+    set scrollTop(_v) {}
+    get scrollLeft() { return 0; }
+    set scrollLeft(_v) {}
+    scrollIntoView() {}
+    scrollTo() {}
+    scrollBy() {}
+    select() {}
+    setSelectionRange() {}
+    get selectionStart() { return 0; }
+    get selectionEnd() { return 0; }
+    // Two nodes are equal when they have the same type, name, attributes and children.
+    isSameNode(other) { return !!other && other.__id === this.__id; }
+    isEqualNode(other) {
+      if (!other || other.nodeType !== this.nodeType) return false;
+      if (this.nodeType === 3) return this.textContent === other.textContent;
+      if (this.tagName !== other.tagName) return false;
+      for (const a of ['id', 'class', 'name', 'type', 'src', 'href', 'rel', 'content', 'property', 'charset', 'nonce', 'value', 'style']) {
+        if (this.getAttribute(a) !== other.getAttribute(a)) return false;
+      }
+      const ca = this.childNodes, cb = other.childNodes;
+      if (ca.length !== cb.length) return false;
+      return ca.every((c, i) => c.isEqualNode(cb[i]));
+    }
+    hasAttributes() { return this.id !== '' || this.getAttribute('class') !== null; }
+    compareDocumentPosition(other) { return other === this ? 0 : 4; }
+    getRootNode() { let n = this; while (n.parentNode) n = n.parentNode; return globalThis.document; }
+    // Siblings and tree helpers (elements only: text nodes are not part of this tree).
+    get nextSibling() { const p = this.parentNode; if (!p) return null; const k = p.childNodes; const i = k.findIndex((x) => x.__id === this.__id); return i >= 0 && i + 1 < k.length ? k[i + 1] : null; }
+    get previousSibling() { const p = this.parentNode; if (!p) return null; const k = p.childNodes; const i = k.findIndex((x) => x.__id === this.__id); return i > 0 ? k[i - 1] : null; }
+    get nodeValue() { return this.nodeType === 3 ? this.textContent : null; }
+    set nodeValue(v) { if (this.nodeType === 3) this.textContent = String(v); }
+    get data() { return this.nodeType === 3 ? this.textContent : undefined; }
+    get isConnected() { return globalThis.document.documentElement.contains(this); }
+    hasChildNodes() { return this.childNodes.length > 0; }
+    prepend(...nodes) { const first = this.firstChild; for (const n of nodes) this.insertBefore(typeof n === 'string' ? globalThis.document.createTextNode(n) : n, first); }
+    replaceChild(n, old) { this.insertBefore(n, old); this.removeChild(old); return old; }
+    insertAdjacentElement(where, el) { if (where === 'beforebegin') this.parentNode.insertBefore(el, this); else if (where === 'afterbegin') this.insertBefore(el, this.firstChild); else if (where === 'beforeend') this.appendChild(el); else if (where === 'afterend') this.parentNode.insertBefore(el, this.nextSibling); return el; }
+    setAttributeNS(_ns, n, v) { this.setAttribute(n, v); }
+    removeAttributeNS(_ns, n) { this.removeAttribute(n); }
     getElementsByClassName(c) { return N.qsa('.' + String(c).trim().split(/\s+/).join('.'), this.__id).map(wrap); }
     getElementsByTagName(t) { return N.qsa(String(t), this.__id).map(wrap); }
     matches(sel) { return N.matches(this.__id, String(sel)); }
@@ -120,6 +215,21 @@
   globalThis.HTMLElement = Element;
 
   const document = {
+    // A Document: the node type and name that libraries check (jQuery and Sizzle need nodeType 9).
+    nodeType: 9,
+    nodeName: '#document',
+    ownerDocument: null,
+    compatMode: 'CSS1Compat',
+    // The <script> being run; set by the host while a script executes.
+    currentScript: null,
+    // The page address and its parts, as pages read them.
+    get URL() { return String(globalThis.__kbUrl || ''); },
+    get documentURI() { return this.URL; },
+    get domain() { return String(globalThis.location.hostname || ''); },
+    referrer: '',
+    get activeElement() { return this.body; },
+    hasFocus() { return true; },
+    get defaultView() { return globalThis; },
     get body() { return wrap(N.qs('body', -1)); },
     get head() { return wrap(N.qs('head', -1)); },
     get documentElement() { return wrap(N.qs('html', -1)); },
@@ -134,6 +244,10 @@
     getElementsByClassName(c) { return N.qsa('.' + String(c).trim().split(/\s+/).join('.'), -1).map(wrap); },
     createElement(tag) { return wrap(N.create(String(tag))); },
     createTextNode(t) { return wrap(N.text(String(t))); },
+    createElementNS(_ns, tag) { return wrap(N.create(String(tag))); },
+    createComment(_t) { return wrap(N.create('template')); },
+    importNode(node, deep) { return node.cloneNode(!!deep); },
+    createDocumentFragment() { const f = wrap(N.create('template')); f.setAttribute('data-kb-fragment', ''); return f; },
     addEventListener(type, fn) { wrap(N.qs('html', -1)).addEventListener(type, fn); },
   };
   globalThis.document = document;
@@ -141,24 +255,34 @@
   // ---- events -------------------------------------------------------------
   // Returns 0: no listener on the path, 1: listeners ran, 2: a listener called preventDefault.
   function dispatch(id, type) {
-    const path = [];
-    for (let cur = id; cur !== null && cur >= 0; cur = N.parent(cur)) path.push(cur);
-    const ev = {
+    return dispatchTo(id, {
       type,
-      target: wrap(id),
+      target: null,
       currentTarget: null,
       defaultPrevented: false,
       preventDefault() { this.defaultPrevented = true; },
       stopPropagation() {},
-    };
+    });
+  }
+  // An event listener is a function, or an object with a handleEvent method (as the DOM allows).
+  function invokeListener(fn, thisArg, ev) {
+    if (typeof fn === 'function') return fn.call(thisArg, ev);
+    if (fn && typeof fn.handleEvent === 'function') return fn.handleEvent(ev);
+    return undefined;
+  }
+  // Deliver `ev` to the listeners of node `id` and its ancestors (bubbling order).
+  function dispatchTo(id, ev) {
+    const path = [];
+    for (let cur = id; cur !== null && cur >= 0; cur = N.parent(cur)) path.push(cur);
+    ev.target = wrap(id);
     let ran = false;
     for (const n of path) {
       const m = listeners.get(n);
-      if (!m || !m[type]) continue;
+      if (!m || !m[ev.type]) continue;
       ran = true;
       ev.currentTarget = wrap(n);
-      for (const fn of m[type]) {
-        try { fn.call(ev.currentTarget, ev); } catch (e) { console.error(String(e)); }
+      for (const fn of m[ev.type]) {
+        try { invokeListener(fn, ev.currentTarget, ev); } catch (e) { console.error(e && e.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : String(e)); }
       }
     }
     if (!ran) return 0;
@@ -183,18 +307,33 @@
   globalThis.requestAnimationFrame = (fn) => globalThis.setTimeout(fn, 16);
 
   // ---- network (synchronous under the hood, Promise-shaped) ------------------
-  globalThis.fetch = (url, _opts) => new Promise((resolve, reject) => {
-    const r = N.httpGet(String(url)); // [status, finalUrl, body] or null
-    if (r === null) return reject(new TypeError('fetch failed: ' + url));
+  globalThis.fetch = (url, opts) => new Promise((resolve, reject) => {
+    const o = opts || {};
+    const method = String(o.method || 'GET');
+    const flat = [];
+    const hdrs = o.headers || {};
+    for (const k of Object.keys(hdrs)) flat.push(String(k), String(hdrs[k]));
+    let payload;
+    if (o.body !== undefined && o.body !== null) {
+      payload = typeof o.body === 'string' ? o.body : (typeof o.body === 'object' ? JSON.stringify(o.body) : String(o.body));
+    }
+    // Relative addresses resolve against the page, as they do in a browser.
+    const r = N.httpRequest(method, resolveUrl(String(url)), flat, payload); // [status, finalUrl, body] or null
+    if (r === null || r === undefined) return reject(new TypeError('fetch failed: ' + url));
     const status = Number(r[0]);
-    const finalUrl = r[1];
-    const body = r[2];
+    const text = r[2];
+    const contentType = r[3] || '';
     resolve({
       ok: status >= 200 && status < 300,
       status,
-      url: finalUrl,
-      text: () => Promise.resolve(body),
-      json: () => Promise.resolve().then(() => JSON.parse(body)),
+      statusText: '',
+      url: r[1],
+      headers: {
+        get: (name) => (String(name).toLowerCase() === 'content-type' ? contentType : null),
+        has: (name) => String(name).toLowerCase() === 'content-type' && contentType !== '',
+      },
+      text: () => Promise.resolve(text),
+      json: () => Promise.resolve().then(() => JSON.parse(text)),
     });
   });
 
@@ -207,9 +346,13 @@
     clear: () => store.clear(),
   };
   const log = (...a) => N.log(a.map(String).join(' '));
-  globalThis.console = { log, info: log, debug: log, warn: log, error: (...a) => N.log('error: ' + a.map(String).join(' ')) };
+  // An Error prints with its first stack frames, so a logged failure shows where it happened.
+  const describe = (a) => (a && a.stack ? String(a.stack).split('\n').slice(0, 3).join(' | ') : String(a));
+  globalThis.console = { log, info: log, debug: log, warn: log, error: (...a) => N.log('error: ' + a.map(describe).join(' ')) };
   globalThis.window = globalThis;
   globalThis.self = globalThis;
+  globalThis.scrollX = 0; globalThis.scrollY = 0; globalThis.pageXOffset = 0; globalThis.pageYOffset = 0;
+  globalThis.scrollTo = () => {}; globalThis.scrollBy = () => {};
   globalThis.navigator = { userAgent: 'kb-browser/0.1 (Linux; Kindle)', language: 'en', onLine: true };
   const href = globalThis.__kbUrl;
   let parsed = { hostname: '', protocol: '', pathname: '/' };
@@ -234,7 +377,7 @@
     dispatchEvent(ev) {
       const list = this.__l.get(ev.type) || [];
       for (const x of list.slice()) {
-        try { x.fn.call(this, ev); } catch (e) { console.error(String(e)); }
+        try { invokeListener(x.fn, this, ev); } catch (e) { console.error(e && e.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : String(e)); }
         if (x.once) this.removeEventListener(ev.type, x.fn);
       }
       return !ev.defaultPrevented;
@@ -362,7 +505,12 @@
 
   // Timing and scheduling.
   const t0 = Date.now();
-  globalThis.performance = { now: () => Date.now() - t0, timeOrigin: t0, mark() {}, measure() {}, getEntriesByName: () => [], getEntriesByType: () => [] };
+  globalThis.performance = {
+    now: () => Date.now() - t0, timeOrigin: t0,
+    mark() {}, measure() {}, clearMarks() {}, clearMeasures() {}, clearResourceTimings() {},
+    getEntries: () => [], getEntriesByName: () => [], getEntriesByType: () => [],
+    toJSON() { return { timeOrigin: t0 }; },
+  };
   globalThis.queueMicrotask = (fn) => Promise.resolve().then(fn);
   globalThis.requestIdleCallback = (fn) => setTimeout(() => fn({ didTimeout: false, timeRemaining: () => 10 }), 1);
   globalThis.cancelIdleCallback = (id) => clearTimeout(id);
@@ -391,7 +539,7 @@
       setTimeout(() => {
         const rect = { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 };
         const entries = [{ target: el, isIntersecting: true, intersectionRatio: 1, boundingClientRect: rect, intersectionRect: rect, rootBounds: null, time: 0 }];
-        try { this.cb(entries, this); } catch (e) { console.error(String(e)); }
+        try { this.cb(entries, this); } catch (e) { console.error(e && e.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : String(e)); }
       }, 0);
     }
     unobserve(el) { this.targets = this.targets.filter((t) => t !== el); }
@@ -405,6 +553,57 @@
   globalThis.MutationObserver = NoopObserver;
   globalThis.ResizeObserver = NoopObserver;
   globalThis.PerformanceObserver = NoopObserver;
+
+  // Element classes for feature checks and `instanceof` (for example Next.js checks HTMLScriptElement).
+  // An element is an instance when its tag matches, so `el instanceof HTMLScriptElement` works.
+  const elementClass = (name, matches) => {
+    const C = { [name]: class extends Element {} }[name];
+    Object.defineProperty(C, Symbol.hasInstance, { value: (o) => o instanceof Element && matches(String(o.tagName).toUpperCase()) });
+    return C;
+  };
+  if (!globalThis.Element) globalThis.Element = Element;
+  if (!globalThis.Node) globalThis.Node = Element;
+  if (!globalThis.HTMLElement) globalThis.HTMLElement = elementClass('HTMLElement', () => true);
+  for (const [name, tag] of [
+    ['HTMLScriptElement', 'SCRIPT'], ['HTMLImageElement', 'IMG'], ['HTMLAnchorElement', 'A'],
+    ['HTMLDivElement', 'DIV'], ['HTMLSpanElement', 'SPAN'], ['HTMLInputElement', 'INPUT'],
+    ['HTMLFormElement', 'FORM'], ['HTMLButtonElement', 'BUTTON'], ['HTMLLinkElement', 'LINK'],
+    ['HTMLIFrameElement', 'IFRAME'], ['HTMLTextAreaElement', 'TEXTAREA'], ['HTMLSelectElement', 'SELECT'],
+    ['HTMLStyleElement', 'STYLE'], ['HTMLTemplateElement', 'TEMPLATE'], ['HTMLCanvasElement', 'CANVAS'],
+    ['HTMLVideoElement', 'VIDEO'], ['HTMLAudioElement', 'AUDIO'],
+    ['SVGElement', 'SVG'],
+  ]) {
+    if (!globalThis[name]) globalThis[name] = elementClass(name, (t) => t === tag);
+  }
+
+  // Character data nodes: Text and its base class, matched by node type (3 is text).
+  const nodeClass = (name, matches) => {
+    const C = { [name]: class extends Element {} }[name];
+    Object.defineProperty(C, Symbol.hasInstance, { value: (o) => o instanceof Element && matches(o.nodeType) });
+    return C;
+  };
+  if (!globalThis.CharacterData) globalThis.CharacterData = nodeClass('CharacterData', (t) => t === 3 || t === 8);
+  if (!globalThis.Text) globalThis.Text = nodeClass('Text', (t) => t === 3);
+  if (!globalThis.Comment) globalThis.Comment = nodeClass('Comment', (t) => t === 8);
+  if (!globalThis.DocumentType) globalThis.DocumentType = nodeClass('DocumentType', (t) => t === 10);
+
+  // IndexedDB is not available on this device. The constructors exist so feature checks and
+  // references do not throw; opening a database fails asynchronously, the way a closed one does.
+  for (const name of ['IDBDatabase', 'IDBIndex', 'IDBObjectStore', 'IDBTransaction', 'IDBRequest', 'IDBCursor', 'IDBKeyRange']) {
+    if (!globalThis[name]) globalThis[name] = class {};
+  }
+  if (!globalThis.indexedDB) {
+    const refuse = () => {
+      const req = { result: undefined, error: null, readyState: 'pending', onsuccess: null, onerror: null };
+      setTimeout(() => {
+        req.readyState = 'done';
+        req.error = new Error('IndexedDB is not available on this device');
+        if (typeof req.onerror === 'function') req.onerror({ target: req });
+      }, 0);
+      return req;
+    };
+    globalThis.indexedDB = { open: refuse, deleteDatabase: refuse, cmp: () => 0 };
+  }
 
   // Layout queries used for feature checks.
   const cssWidth = globalThis.__kbCssWidth || 412;
@@ -439,6 +638,7 @@
   // ---- entry points used by the host ---------------------------------------
   globalThis.__kb = {
     setLocation: (url) => copyLocation(new URLLite(url)),
+    setCurrentScript: (id) => { document.currentScript = id < 0 ? null : wrap(id); },
     click: (id) => dispatch(id, 'click'),
     runTimers: () => {
       let n = 0;
@@ -446,7 +646,7 @@
         timers.sort((a, b) => a.due - b.due || a.id - b.id);
         const t = timers.shift();
         n++;
-        try { t.fn(...t.args); } catch (e) { console.error(String(e)); }
+        try { t.fn(...t.args); } catch (e) { console.error(e && e.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : String(e)); }
       }
       return n;
     },

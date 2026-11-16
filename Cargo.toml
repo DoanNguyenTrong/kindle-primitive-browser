@@ -27,3 +27,5 @@ debug = false
 # struct layouts are identical for musl, so the gnu file is reused (see vendor/README.md).
 [patch.crates-io]
 rquickjs-sys = { path = "vendor/rquickjs-sys-0.14.0" }
+# blitz-dom: guards for stylesheets and messages that arrive after a node was removed (see vendor/README.md).
+blitz-dom = { path = "vendor/blitz-dom-0.3.0-beta.4" }

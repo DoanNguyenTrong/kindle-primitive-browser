@@ -123,6 +123,8 @@ impl Page {
             font_ctx: Some(font_context()),
             base_url: Some(base_url.to_string()),
             net_provider: Some(net.clone() as Arc<dyn NetProvider>),
+            // Without a parser, `innerHTML` assignments are silently dropped.
+            html_parser_provider: Some(Arc::new(blitz_html::HtmlProvider) as Arc<dyn blitz_dom::HtmlParserProvider>),
             ..Default::default()
         };
         let doc: Doc = Rc::new(RefCell::new(HtmlDocument::from_html(html, config)));
@@ -138,22 +140,23 @@ impl Page {
             scale,
             content_h: height as f64,
         };
-        page.settle(pump);
-        page.run_scripts();
-        page.settle(pump);
+        // Each step is contained: a layout panic on one step costs that step, not the page.
+        contain(|| page.settle(pump));
+        contain(|| page.run_scripts());
+        contain(|| page.settle(pump));
         // Streamed server markup: content sits in hidden S:n blocks that should replace
         // the B:n placeholders. Do it here too, in case the page's own swap script failed.
-        page.swap_streamed_chunks();
-        page.settle(pump);
+        contain(|| page.swap_streamed_chunks());
+        contain(|| page.settle(pump));
         page.title = page.live_title().unwrap_or(page.title);
-        page.content_h = page.measure();
+        page.content_h = contain(|| page.measure());
         // Painting culls against the document viewport, so widen it to the full
         // document height (scroll-invariant) and lay out once more. Canvas stays one screen.
         if page.content_h > height as f64 {
             let window = Viewport::new(width, page.content_h.ceil() as u32, scale, ColorScheme::Light);
-            page.doc.borrow_mut().set_viewport(window);
-            page.settle(&mut || true);
-            page.content_h = page.measure();
+            contain(|| page.doc.borrow_mut().set_viewport(window));
+            contain(|| page.settle(&mut || true));
+            page.content_h = contain(|| page.measure());
         }
         page
     }
@@ -254,9 +257,10 @@ impl Page {
         if scripts.is_empty() {
             return;
         }
-        let http: HttpGet = Rc::new(|url: &str| {
-            kb_net::load(url, MAX_SCRIPT_BYTES, Policy::Network).ok().map(|f| {
-                vec!["200".to_string(), f.url, String::from_utf8_lossy(&f.body).into_owned()]
+        let http: HttpGet = Rc::new(|method: &str, url: &str, flat: &[String], body: Option<String>| {
+            let headers: Vec<(String, String)> = flat.chunks(2).filter(|p| p.len() == 2).map(|p| (p[0].clone(), p[1].clone())).collect();
+            kb_net::request(method, url, &headers, body.as_deref(), MAX_SCRIPT_BYTES).ok().map(|r| {
+                vec![r.status.to_string(), r.url, r.body, r.content_type]
             })
         });
         let js = match Js::new(self.doc.clone(), &self.base, http,
@@ -267,31 +271,49 @@ impl Page {
                 return;
             }
         };
-        for (inline, src, kind) in scripts {
+        // External scripts are fetched together (a few at a time), then run in document order.
+        let wanted: Vec<Option<String>> = scripts
+            .iter()
+            .map(|(_, src, kind, _)| {
+                src.as_ref()
+                    .filter(|_| kind_is_script(kind.as_deref()))
+                    .and_then(|s| Url::parse(&self.base).and_then(|b| b.join(s)).ok())
+                    .map(|u| u.to_string())
+            })
+            .collect();
+        let fetched = fetch_scripts(&wanted);
+        for ((inline, src, kind, node), result) in scripts.into_iter().zip(fetched) {
             let code = match (&src, inline) {
-                (Some(src), _) => match Url::parse(&self.base).and_then(|b| b.join(src)) {
-                    Ok(u) => match kb_net::load(u.as_str(), MAX_SCRIPT_BYTES, Policy::Cache(Duration::from_secs(600))) {
-                        Ok(f) => String::from_utf8_lossy(&f.body).into_owned(),
-                        Err(e) => {
-                            eprintln!("[js] {u}: {e}");
-                            continue;
-                        }
-                    },
-                    Err(_) => continue,
+                (Some(_), _) => match result {
+                    Some((u, Ok(f))) if f.content_type.to_ascii_lowercase().contains("html") => {
+                        // A server can answer a script address with a page (an error or a login
+                        // page). Running that as JavaScript only produces a syntax error.
+                        eprintln!("[js] {u}: not a script ({})", f.content_type);
+                        continue;
+                    }
+                    Some((_, Ok(f))) => String::from_utf8_lossy(&f.body).into_owned(),
+                    Some((u, Err(e))) => {
+                        eprintln!("[js] {u}: {e}");
+                        continue;
+                    }
+                    None => continue,
                 },
                 (None, text) => text,
             };
             if !kind_is_script(kind.as_deref()) || code.trim().is_empty() {
                 continue;
             }
+            // While it runs, the script is `document.currentScript` (bundles read their own address from it).
+            js.set_current_script(Some(node));
             js.run(&code, src.as_deref().unwrap_or("inline"));
+            js.set_current_script(None);
         }
         js.run_timers();
         self.js = Some(js);
     }
 
     /// (inline text, src attribute, type attribute) for each script element, in order.
-    fn script_nodes(&self) -> Vec<(String, Option<String>, Option<String>)> {
+    fn script_nodes(&self) -> Vec<(String, Option<String>, Option<String>, u64)> {
         let doc = self.doc.borrow();
         let mut out = Vec::new();
         let mut stack = vec![doc.root_element().id];
@@ -307,7 +329,7 @@ impl Page {
             let Some(node) = doc.get_node(id) else { continue };
             let src = node.attr(blitz_dom::local_name!("src")).map(str::to_string);
             let kind = node.attr(blitz_dom::local_name!("type")).map(str::to_string);
-            out.push((node.text_content(), src, kind));
+            out.push((node.text_content(), src, kind, id.as_u64()));
         }
         out
     }
@@ -690,12 +712,23 @@ pre{{white-space:pre-wrap;font-size:28px}}
         &self.base
     }
 
+    /// Make `url` the page's location after an in-page navigation or a restore. Only a web
+    /// address becomes the base for relative links and resources: an internal address (kbp://)
+    /// keeps the base of the page it shows, so a saved page still loads its own resources.
     pub fn set_location(&mut self, url: &str) {
-        self.base = url.to_string();
+        if url.starts_with("http://") || url.starts_with("https://") {
+            self.base = url.to_string();
+        }
         if let Some(js) = self.js.as_ref() {
             js.set_location(url);
         }
     }
+}
+
+/// Run one step of page construction. The layout engine panics on some stale or unusual document
+/// states; such a step is skipped and the page is still shown.
+fn contain<T: Default>(step: impl FnOnce() -> T) -> T {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(step)).unwrap_or_default()
 }
 
 /// Text-like `<input type>` values we edit on the on-screen keyboard.
@@ -712,6 +745,38 @@ fn input_value(node: &blitz_dom::Node) -> String {
 }
 
 /// Whether a `<script type=…>` is classic JavaScript we can run.
+/// How many external scripts are fetched at the same time.
+const SCRIPT_FETCH_WAVE: usize = 6;
+
+/// Fetch the script addresses given (None: nothing to fetch), a wave at a time, in order.
+fn fetch_scripts(urls: &[Option<String>]) -> Vec<Option<(String, Result<kb_net::Fetched, String>)>> {
+    let mut out: Vec<Option<(String, Result<kb_net::Fetched, String>)>> = (0..urls.len()).map(|_| None).collect();
+    let jobs: Vec<(usize, String)> = urls
+        .iter()
+        .enumerate()
+        .filter_map(|(i, u)| u.clone().map(|u| (i, u)))
+        .collect();
+    for wave in jobs.chunks(SCRIPT_FETCH_WAVE) {
+        let done: Vec<(usize, String, Result<kb_net::Fetched, String>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = wave
+                .iter()
+                .map(|(i, u)| {
+                    let (i, u) = (*i, u.clone());
+                    scope.spawn(move || {
+                        let r = kb_net::load(&u, MAX_SCRIPT_BYTES, Policy::Cache(Duration::from_secs(600)));
+                        (i, u, r)
+                    })
+                })
+                .collect();
+            handles.into_iter().filter_map(|h| h.join().ok()).collect()
+        });
+        for (i, u, r) in done {
+            out[i] = Some((u, r));
+        }
+    }
+    out
+}
+
 fn kind_is_script(kind: Option<&str>) -> bool {
     match kind.map(|k| k.trim().to_ascii_lowercase()) {
         None => true,
@@ -783,6 +848,17 @@ pub fn extract_title(html: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn internal_location_keeps_the_web_base_for_relative_links() {
+        let html = r#"<!doctype html><p><a id="a" href="next.html">next</a></p>"#;
+        let mut page = Page::new_scaled(html, "https://example.org/docs/", 600, 800,
+            Arc::new(SyncNet::new(1024)), &mut || true, Some(300.0));
+        page.set_location("kbp://saved/abc123");
+        assert_eq!(page.resolve("next.html").as_deref(), Some("https://example.org/docs/next.html"));
+        page.set_location("https://example.org/other/page.html");
+        assert_eq!(page.resolve("next.html").as_deref(), Some("https://example.org/other/next.html"));
+    }
 
     #[test]
     fn fragment_targets_support_encoded_ids_named_anchors_and_absolute_scroll() {

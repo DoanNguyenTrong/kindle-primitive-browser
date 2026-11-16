@@ -1,0 +1,49 @@
+//! Bookmarks, visit history and saved pages.
+
+use super::*;
+
+impl Browser {
+    pub(super) fn toggle_bookmark(&mut self) {
+        if self.url.is_empty() || self.url.starts_with("kbp:") {
+            return;
+        }
+        if let Some(i) = self.bookmarks.iter().position(|(u, _)| *u == self.url) {
+            self.bookmarks.remove(i);
+        } else {
+            self.bookmarks
+                .push((self.url.clone(), self.title().to_string()));
+        }
+        write_pairs(&data_file("bookmarks.tsv"), &self.bookmarks);
+        let added = self.bookmarks.iter().any(|(u, _)| *u == self.url);
+        self.notify(if added {
+            "Bookmark added"
+        } else {
+            "Bookmark removed"
+        });
+        self.touch(self.height - BOT_H, self.height, Wave::Fast);
+    }
+
+    pub(super) fn record_visit(&mut self, url: &str, title: &str) {
+        self.visits.retain(|(u, _)| u != url);
+        self.visits.insert(0, (url.to_string(), title.to_string()));
+        self.visits.truncate(HISTORY_CAP);
+        write_pairs(&data_file("history.tsv"), &self.visits);
+    }
+
+    pub(super) fn save_offline(&mut self) {
+        if self.url.is_empty() || self.url.starts_with("kbp:") || self.source.is_empty() {
+            return;
+        }
+        let key = format!("{:016x}", fnv(&self.url));
+        let dir = data_file("saved");
+        let _ = fs::create_dir_all(&dir);
+        let _ = fs::write(dir.join(format!("{key}.html")), &self.source);
+        let mut index = read_pairs(&data_file("saved.tsv"));
+        index.retain(|(k, _)| *k != key);
+        index.push((key, format!("{} {}", self.url, self.title())));
+        write_pairs(&data_file("saved.tsv"), &index);
+        self.sheet_layer = None;
+        self.touch(self.height - MENU_H, self.height, Wave::Text);
+        self.notify("Saved for offline");
+    }
+}

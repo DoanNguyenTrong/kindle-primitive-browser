@@ -13,7 +13,7 @@
 //! here for this browser. Colours are black on white plus light grey fills and dividers;
 //! e-ink shows mid-greys only roughly, so no meaning rests on a tint alone.
 
-use crate::{esc, width_name, Key, Layer, BOT_H, KB_Y, PAGE_WIDTHS, TOP_H, SHEET_TITLE_H};
+use crate::{esc, width_name, Key, Layer, BOT_H, PAGE_WIDTHS, SHEET_TITLE_H, TOP_H};
 
 /// Line icon from the set below, at `size` device pixels.
 pub fn icon(name: &str, size: u32) -> String {
@@ -82,6 +82,14 @@ html,body{{margin:0;background:#fff;color:#111;font-family:sans-serif;overflow:h
 .sheet-controls{{display:flex;gap:16px}}
 .sheet-title .btn{{height:68px;font-size:24px}}
 .section{{padding:22px 24px 6px;font-size:22px;color:#777;letter-spacing:1px}}
+.menu-label{{padding:18px 24px 10px;font-size:22px;color:#777;letter-spacing:1px}}
+.tiles{{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:0 24px}}
+.tile{{display:flex;flex-direction:column;justify-content:space-between;height:148px;padding:16px 18px;border:2px solid #d4d4d4;border-radius:18px;color:#111;text-decoration:none;overflow:hidden}}
+.tile.on{{background:#111;color:#fff;border-color:#111}}
+.tile-ico{{display:flex}}
+.tile-label{{font-size:28px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.tile-cap{{font-size:22px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+.tile.on .tile-cap{{color:#ddd}}
 .row{{display:flex;align-items:center;gap:20px;min-height:96px;padding:12px 24px;border-bottom:1px solid #e6e6e6;font-size:32px;color:#111;text-decoration:none}}
 .row .main{{flex:1;min-width:0}}
 .row .sub{{display:block;font-size:22px;color:#777;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}}
@@ -158,55 +166,58 @@ pub fn bottom(back: bool, fwd: bool, marked: bool, tabs: usize) -> String {
     document("Toolbar", &body, "")
 }
 
-/// One row of the menu: icon, label, and an optional value on the right.
-fn menu_row(href: &str, icon_name: &str, label: &str, end: &str) -> String {
+/// One menu tile: icon, label and a caption. `on` marks a state that is currently active.
+fn menu_tile(href: &str, icon_name: &str, label: &str, caption: &str, on: bool) -> String {
     format!(
-        r#"<a class="row" href="{h}"><span class="lead">{i}</span><span class="main">{l}</span><span class="end">{e}</span></a>"#,
+        r#"<a class="tile{c}" href="{h}"><span class="tile-ico">{i}</span><span class="tile-label">{l}</span><span class="tile-cap">{p}</span></a>"#,
+        c = if on { " on" } else { "" },
         h = esc(href),
-        i = icon(icon_name, 36),
+        i = icon(icon_name, 44),
         l = esc(label),
-        e = esc(end),
+        p = esc(caption),
     )
 }
 
-/// Menu sheet: grouped rows with icons. The list scrolls when it is taller than the sheet.
-pub fn menu(reader: bool, cache_mb: u64, marked: bool, night: bool, display: &str, images: bool) -> String {
-    let groups: Vec<(&str, Vec<String>)> = vec![
-        ("PAGE", vec![
-            menu_row("kb:reload", "reload", "Reload", ""),
-            menu_row("kb:reader", "read", if reader { "Normal view" } else { "Reading view" }, ""),
-            menu_row("kb:display", "text", "Display", display),
-            menu_row("kb:images", "image", "Images", if images { "On" } else { "Off" }),
-            menu_row("kb:night", "moon", "Night mode", if night { "On" } else { "Off" }),
-        ]),
-        ("SAVE", vec![
-            menu_row("kb:mark", if marked { "star-on" } else { "star" }, if marked { "Remove bookmark" } else { "Add bookmark" }, ""),
-            menu_row("kb:save", "save", "Save for offline", ""),
-            menu_row("kbp://bookmarks", "bookmarks", "Bookmarks", ""),
-            menu_row("kbp://saved", "saved", "Saved pages", ""),
-        ]),
-        ("BROWSER", vec![
-            menu_row("kb:home", "home", "Home", ""),
-            menu_row("kb:clearcache", "trash", "Clear cache", &format!("{cache_mb} MB")),
-            menu_row("kb:clearhistory", "trash", "Clear history", ""),
-        ]),
-    ];
-    let mut out = String::new();
-    for (title, rows) in groups {
-        out.push_str(&format!(r#"<div class="section">{title}</div>"#));
-        out.push_str(&rows.concat());
-    }
-    out.push_str(&format!(r#"<div style="height:24px"></div>"#));
-    document("Menu", &format!(r#"<div class="sheet">{out}</div>"#), "")
+/// A labelled group of menu tiles on one row of four.
+fn menu_group(title: &str, tiles: &[String]) -> String {
+    format!(r#"<div class="menu-label">{title}</div><div class="tiles">{}</div>"#, tiles.concat())
 }
 
-/// A separate layer keeps dismissal (and Exit in the menu) visible as the body scrolls.
-pub fn sheet_header(title: &str, exit: bool) -> String {
-    let exit = if exit { r#"<a class="btn on" href="kb:exit">Exit browser</a>"# } else { "" };
+/// Menu sheet: three groups of tiles in a four-column grid. Every tile is a full touch target
+/// and the grid fills the width, so no space is left empty. Night mode lives in Display.
+pub fn menu(reader: bool, cache_mb: u64, marked: bool, display: &str, images: bool) -> String {
+    let page = menu_group("PAGE", &[
+        menu_tile("kb:reload", "reload", "Reload", "", false),
+        menu_tile("kb:reader", "read", if reader { "Normal view" } else { "Reading view" }, if reader { "On" } else { "Off" }, reader),
+        menu_tile("kb:display", "text", "Display", display, false),
+        menu_tile("kb:images", "image", "Images", if images { "On" } else { "Off" }, images),
+    ]);
+    let save = menu_group("SAVE", &[
+        menu_tile("kb:mark", if marked { "star-on" } else { "star" }, if marked { "Bookmarked" } else { "Bookmark" }, if marked { "Tap to remove" } else { "This page" }, marked),
+        menu_tile("kb:save", "save", "Save offline", "Keep a copy", false),
+        menu_tile("kbp://bookmarks", "bookmarks", "Bookmarks", "Manage list", false),
+        menu_tile("kbp://saved", "saved", "Saved pages", "Offline copies", false),
+    ]);
+    let browser = menu_group("BROWSER", &[
+        menu_tile("kb:home", "home", "Home", "Start page", false),
+        menu_tile("kb:newtab", "newtab", "New tab", "", false),
+        menu_tile("kb:clearcache", "trash", "Clear cache", &format!("{cache_mb} MB"), false),
+        menu_tile("kb:clearhistory", "trash", "Clear history", "", false),
+    ]);
+    document("Menu", &format!(r#"<div class="sheet menu">{page}{save}{browser}</div>"#), ".menu{padding-bottom:32px}")
+}
+
+/// Title strip for a sheet: its name on the left, its controls on the right.
+pub fn sheet_header(title: &str, controls: &str) -> String {
     document(title, &format!(
-        r#"<div class="sheet-title"><span>{}</span><div class="sheet-controls">{exit}<a class="btn" href="kb:closemenu">Done</a></div></div>"#,
+        r#"<div class="sheet-title"><span>{}</span><div class="sheet-controls">{controls}</div></div>"#,
         esc(title)
     ), "")
+}
+
+/// The Exit control shown in the menu's title strip.
+pub fn exit_button() -> String {
+    r#"<a class="btn on" href="kb:exit">Exit browser</a>"#.to_string()
 }
 
 /// Display sheet: text size steps, page width, and day or night. Changes apply at once and the
@@ -274,37 +285,62 @@ pub fn tabs(tabs: &[(String, String)], active: usize) -> String {
 }
 
 /// Keyboard header and address field, above the keys. Input mode edits a page field.
-pub fn field(typed: &[char], caret: usize, suggestions: &[(String, String)], input: bool) -> String {
+/// Most characters of the address shown at once in the bar; the window follows the caret.
+const FIELD_VISIBLE_CHARS: usize = 34;
+
+/// The address bar while the keyboard is open. It is the same bar as the page's address bar: the
+/// URL field fills the width, and Cancel sits where the reload button sits. A selected address
+/// is highlighted and has no caret.
+pub fn field_bar(typed: &[char], caret: usize, selected: bool) -> String {
     let caret = caret.min(typed.len());
+    // Show a window of the text that keeps the caret in view, with an ellipsis when cut.
+    let start = if caret >= FIELD_VISIBLE_CHARS { caret + 1 - FIELD_VISIBLE_CHARS } else { 0 };
+    let end = (start + FIELD_VISIBLE_CHARS).min(typed.len());
     let mut text = String::new();
-    for (i, c) in typed.iter().enumerate() {
-        if i == caret {
+    if selected {
+        text.push_str(r#"<span class="sel">"#);
+    }
+    if start > 0 {
+        text.push_str(r#"<span class="dim">…</span>"#);
+    }
+    for i in start..end {
+        if !selected && i == caret {
             text.push_str(r#"<span class="caret"></span>"#);
         }
-        text.push_str(&format!(r#"<a class="ch" href="kb:pos:{i}">{}</a>"#, esc(&c.to_string())));
+        text.push_str(&format!(r#"<a class="ch" href="kb:pos:{i}">{}</a>"#, esc(&typed[i].to_string())));
     }
-    if caret == typed.len() {
+    if selected {
+        text.push_str("</span>");
+    } else if caret == typed.len() {
         text.push_str(r#"<span class="caret"></span>"#);
     }
     if typed.is_empty() {
         text.push_str(r#"<span class="hint">Type an address or search</span>"#);
     }
-    let title = if input { "Text field" } else { "Address" };
-    let go = if input { "Done" } else { "Go" };
+    let body = format!(
+        r#"<div class="bar"><div class="omni field-omni"><span class="field-text">{text}</span></div><a class="btn" href="kb:cancel">Cancel</a></div>"#
+    );
+    let extra = ".ch{text-decoration:none}.sel{background:#cfcfcf;border-radius:6px}\
+.field-omni{min-width:0}.field-text{overflow:hidden;white-space:nowrap}.dim{color:#777}";
+    document("Address field", &body, extra)
+}
+
+/// The suggestions under the address bar: bookmarks and recent pages that match the typed text
+/// (or all of them while the address is selected). The list scrolls when it is longer than the
+/// space above the keys.
+pub fn field_list(suggestions: &[(String, String, bool)]) -> String {
     let mut rows = String::new();
-    for (i, (u, t)) in suggestions.iter().enumerate() {
+    for (i, (u, t, bookmarked)) in suggestions.iter().enumerate() {
         let label = if t.is_empty() { u.as_str() } else { t.as_str() };
+        // Bookmarks and recent pages have different icons, so the list shows where a row comes from.
+        let ic = icon(if *bookmarked { "bookmarks" } else { "menu-page" }, 32);
         rows.push_str(&format!(
             r#"<a class="row" href="kb:sugg:{i}"><span class="lead">{ic}</span><span class="main">{l}<span class="sub">{u}</span></span></a>"#,
-            ic = icon("bookmarks", 32),
             l = esc(label),
             u = esc(u),
         ));
     }
-    let body = format!(
-        r#"<div class="bar"><span class="title">{title}</span><a class="btn" href="kb:cancel">Cancel</a><a class="btn on" href="kb:go">{go}</a></div><div style="padding:20px"><div class="omni" style="display:block;height:auto;min-height:88px;padding:18px 22px;border-radius:18px;font-size:36px;word-break:break-all">{text}</div></div>{rows}"#
-    );
-    document("Address field", &body, &format!("body{{height:{KB_Y}px}}"))
+    document("Suggestions", &rows, "")
 }
 
 /// Keyboard keys: rows from `keyboard_rows`, in a 16 px frame at the bottom.
@@ -375,23 +411,25 @@ pub fn list(title: &str, items: &[ListItem], empty: &str) -> String {
     document(title, &body, "")
 }
 
-/// Collapsible section heading on the home screen: title, count, and a chevron. Tapping toggles it.
-fn section_head(title: &str, count: usize, href: &str, open: bool) -> String {
+/// Heading of a home section: its name, a count, optional links, and a text control that shows or
+/// hides the section. Text, not an icon, so the control's meaning is clear on e-ink.
+fn section_head(title: &str, count: usize, toggle: &str, open: bool, extra: &str) -> String {
     format!(
-        r#"<a class="sechead" href="{h}"><span class="sechead-title">{t}</span><span class="sechead-count">{count}</span><span class="grow"></span>{c}</a>"#,
-        h = esc(href),
+        r#"<div class="sechead"><span class="sechead-title">{t}</span><span class="sechead-count">{count}</span><span class="grow"></span>{extra}<a class="sechead-toggle" href="{h}">{label}</a></div>"#,
         t = esc(title),
-        c = icon(if open { "chev-up" } else { "chev-down" }, 32),
+        h = esc(toggle),
+        label = if open { "Hide" } else { "Show" },
     )
 }
 
-/// Home screen: the address bar is the only search box. Bookmark tiles in a grid and recent pages,
-/// each section with a heading that shows or hides it.
+/// Home screen: the address bar is the only search box. Two sections, each with a heading that
+/// shows or hides its content: bookmarks as a grid of tiles, and recent pages as rows.
 pub fn home(bookmarks: &[(String, String)], recent: &[(String, String)], bm_open: bool, recent_open: bool) -> String {
+    let manage = if bookmarks.is_empty() { String::new() } else { r#"<a class="sechead-link" href="kbp://bookmarks">Manage</a>"#.to_string() };
     let bm_body = if !bm_open {
         String::new()
     } else if bookmarks.is_empty() {
-        r#"<div class="empty">Bookmarks you add appear here.</div>"#.to_string()
+        r#"<div class="home-empty">No bookmarks yet. Tap the star on a page to add it here.</div>"#.to_string()
     } else {
         let tiles: String = bookmarks
             .iter()
@@ -399,43 +437,57 @@ pub fn home(bookmarks: &[(String, String)], recent: &[(String, String)], bm_open
                 let title = if t.is_empty() { u.as_str() } else { t.as_str() };
                 let letter = title.chars().next().unwrap_or('•').to_uppercase().to_string();
                 format!(
-                    r#"<a class="tile" href="{u}"><span class="ico">{l}</span><span class="t">{t}</span></a>"#,
+                    r#"<a class="mark-tile" href="{u}"><span class="mark-badge">{l}</span><span class="mark-title">{t}</span></a>"#,
                     u = esc(u),
                     l = esc(&letter),
                     t = esc(title),
                 )
             })
             .collect();
-        format!(r#"<div class="grid">{tiles}</div>"#)
+        format!(r#"<div class="mark-grid">{tiles}</div>"#)
     };
     let recent_body = if !recent_open {
         String::new()
     } else if recent.is_empty() {
-        r#"<div class="empty">Pages you visit appear here.</div>"#.to_string()
+        r#"<div class="home-empty">Pages you visit appear here.</div>"#.to_string()
     } else {
-        recent
+        let rows: String = recent
             .iter()
-            .take(6)
+            .take(8)
             .map(|(u, t)| {
                 let label = if t.is_empty() { u.as_str() } else { t.as_str() };
                 format!(
-                    r#"<a class="row" href="{u}"><span class="lead">{i}</span><span class="main">{l}<span class="sub">{u}</span></span></a>"#,
-                    i = icon("menu-page", 30),
+                    r#"<a class="recent-row" href="{u}"><span class="recent-ico">{i}</span><span class="recent-text"><span class="recent-title">{l}</span><span class="recent-url">{u}</span></span></a>"#,
+                    i = icon("menu-page", 36),
                     u = esc(u),
                     l = esc(label),
                 )
             })
-            .collect()
+            .collect();
+        format!(r#"<div class="recent-list">{rows}</div>"#)
     };
     let body = format!(
-        r#"<div class="page">{bm_head}{bm_body}{rec_head}</div>{recent_body}
-<div class="page"><div class="actions"><a class="btn" href="kbp://bookmarks">All bookmarks</a><a class="btn" href="kbp://saved">Saved pages</a></div></div>"#,
-        bm_head = section_head("BOOKMARKS", bookmarks.len(), "kb:homeshow:bm", bm_open),
-        rec_head = section_head("RECENT", recent.len(), "kb:homeshow:recent", recent_open),
+        r#"<div class="home"><section>{bm_head}{bm_body}</section><section>{rec_head}{recent_body}</section></div>"#,
+        bm_head = section_head("BOOKMARKS", bookmarks.len(), "kb:homeshow:bm", bm_open, &manage),
+        rec_head = section_head("RECENT", recent.len(), "kb:homeshow:recent", recent_open, ""),
     );
-    let extra = ".sechead{display:flex;align-items:center;gap:16px;height:72px;margin-top:20px;font-size:24px;letter-spacing:1px;color:#555;text-decoration:none}\
+    let extra = ".home{padding:24px 24px 0}\
+.sechead{display:flex;align-items:center;gap:16px;height:64px;margin-top:20px;font-size:22px;letter-spacing:1px;color:#555}\
 .sechead-count{font-size:22px;color:#888}\
-.grow{flex:1}";
+.sechead-link,.sechead-toggle{display:flex;align-items:center;height:64px;padding:0 4px;font-size:26px;letter-spacing:0;color:#111;text-decoration:none}\
+.sechead-toggle{text-decoration:underline}\
+.grow{flex:1}\
+.mark-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;padding:12px 0 0}\
+.mark-tile{display:flex;flex-direction:column;justify-content:space-between;height:148px;padding:16px 18px;border:2px solid #d4d4d4;border-radius:18px;color:#111;text-decoration:none;overflow:hidden}\
+.mark-badge{display:flex;align-items:center;justify-content:center;width:52px;height:52px;border-radius:26px;background:#111;color:#fff;font-size:26px}\
+.mark-title{font-size:24px;line-height:1.2;max-height:58px;overflow:hidden}\
+.recent-list{padding-top:4px}\
+.recent-row{display:flex;align-items:center;gap:20px;min-height:96px;padding:12px 4px;border-bottom:1px solid #e6e6e6;color:#111;text-decoration:none}\
+.recent-ico{display:flex;color:#333}\
+.recent-text{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}\
+.recent-title{font-size:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.recent-url{font-size:22px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.home-empty{padding:28px 4px;font-size:26px;color:#666}";
     document("Home", &body, extra)
 }
 

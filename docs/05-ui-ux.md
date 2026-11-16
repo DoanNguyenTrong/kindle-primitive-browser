@@ -2,7 +2,7 @@
 
 The interface should remain legible in grayscale, respond predictably to touch, and keep
 reading interruptions short. `kb-app/src/ui.rs` defines the shared visual language;
-`kb-app/src/lib.rs` owns interactions and composition.
+`kb-app/src/browser/` owns interactions and composition (see [02-architecture.md](02-architecture.md) §2.12).
 
 ## Layout and controls
 

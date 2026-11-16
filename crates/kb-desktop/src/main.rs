@@ -2,7 +2,10 @@
 //! the screen after each one to `$KB_OUT` (default `out.png`). Times every action.
 //!
 //!   open <url|text> | tap <x> <y> | scroll <dy> | page <+1|-1> | back | fwd | reload
-//!   action <name> | quit
+//!   action <name> | shot <name> | quit
+//!
+//! `shot <name>` waits for pending images and notices, then saves the full screen as
+//! `$KB_SHOTS/<name>.png` (the regression suite gives each scenario its own folder).
 
 use std::{
     io::{self, BufRead},
@@ -93,7 +96,7 @@ fn main() -> io::Result<()> {
             }
             "visible" => {
                 let sel = parts.collect::<Vec<_>>().join(" ");
-                eprintln!("[visible] {sel}: {}", b.visible_in_page(&sel));
+                eprintln!("[visible] {sel}: {}", b.visible_on_screen(&sel));
             }
             "tapsel" => {
                 let sel = parts.collect::<Vec<_>>().join(" ");
@@ -150,7 +153,7 @@ fn main() -> io::Result<()> {
                         let range: Vec<f64> = expected.split_whitespace().filter_map(|n| n.parse().ok()).collect();
                         range.len() == 2 && b.scroll_pos() >= range[0] && b.scroll_pos() <= range[1]
                     }
-                    "visible" => b.screen_center(&expected).is_some_and(|(x, y)| x >= 0.0 && x < W as f32 && y >= 0.0 && y < H as f32),
+                    "visible" => b.visible_on_screen(&expected) == 1,
                     _ => false,
                 };
                 if !ok {
@@ -160,6 +163,18 @@ fn main() -> io::Result<()> {
                     )));
                 }
                 eprintln!("[assert] {kind} {expected}: PASS");
+            }
+            "shot" => {
+                let name = parts.next().unwrap_or("shot").to_string();
+                settle(&mut b);
+                match std::env::var("KB_SHOTS") {
+                    Ok(dir) => {
+                        let update = b.frame();
+                        write(&update, &format!("{dir}/{name}.png"));
+                        eprintln!("[shot] {name}");
+                    }
+                    Err(_) => eprintln!("[shot] {name}: KB_SHOTS is not set"),
+                }
             }
             "quit" => break,
             "" => continue,
@@ -175,6 +190,15 @@ fn main() -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// Wait (at most 8 s) until held-back images have arrived and any notice has cleared.
+fn settle(b: &mut Browser) {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while (b.images_loading() || b.notice_showing()) && Instant::now() < deadline {
+        thread::sleep(Duration::from_millis(40));
+        let _ = b.tick();
+    }
 }
 
 /// Run one action, wait for held-back images, then write the screen.

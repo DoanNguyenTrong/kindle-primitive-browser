@@ -1,0 +1,7 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Script order fixture</title></head>
+<body><p id="out">not run</p>
+<script src="order_a.js"></script>
+<script src="order_b.js"></script>
+<script>document.getElementById('out').textContent = 'order=' + window.order.join('');</script>
+</body></html>

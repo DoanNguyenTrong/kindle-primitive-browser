@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>DOM API fixture</title></head>
+<body><p id="out">not run</p><div id="box"></div>
+<script>
+var checks = [];
+// Appending: parent links, ids and missing attributes.
+var q = document.createElement('span'); q.id = 'zz'; document.body.appendChild(q);
+checks.push('append=' + (document.getElementById('zz') ? 'ok' : 'bad'));
+checks.push('parent=' + (q.parentNode && q.parentNode.tagName === 'BODY' ? 'ok' : 'bad'));
+checks.push('missingattr=' + (q.getAttribute('data-none') === null ? 'null' : 'bad'));
+// innerHTML builds real elements; text nodes are child nodes too.
+var box = document.getElementById('box');
+box.innerHTML = 'hi <b>there</b>';
+checks.push('kids=' + box.children.length + '/' + box.childNodes.length);
+checks.push('text=' + (box.firstChild && box.firstChild.nodeType === 3 ? 'ok' : 'bad'));
+checks.push('nodeType=' + document.nodeType + '/' + box.nodeType);
+// Equality and copies (a deep copy keeps the content).
+var a = document.createElement('div'); a.className = 'x'; a.innerHTML = '<i>1</i>';
+var b = a.cloneNode(true);
+checks.push('equal=' + a.isEqualNode(b));
+checks.push('clone=' + (b.firstChild && b.firstChild.tagName === 'I' ? 'ok' : 'bad'));
+// Document fragments move their children into the parent.
+var frag = document.createDocumentFragment();
+frag.appendChild(document.createElement('em')); frag.appendChild(document.createElement('em'));
+box.appendChild(frag);
+checks.push('frag=' + box.querySelectorAll('em').length);
+// Libraries check for these before they run.
+checks.push('perf=' + (typeof performance.clearMarks === 'function' ? 'ok' : 'bad'));
+checks.push('svg=' + (typeof SVGElement === 'function' ? 'ok' : 'bad'));
+checks.push('idb=' + (typeof IDBIndex === 'function' ? 'ok' : 'bad'));
+document.getElementById('out').textContent = checks.join(';');
+// fetch sends its method, headers and body (the fixture server echoes the city field of a POST).
+fetch('/submit', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'city=Hanoi' })
+  .then(function (r) { return r.text().then(function (t) {
+    document.getElementById('out').textContent += ';post=' + (t.indexOf('Hanoi') >= 0 ? 'ok' : 'bad:' + t.slice(0, 40));
+  }); });
+</script></body></html>

@@ -132,6 +132,70 @@ pub fn fetch(url: &str, max_bytes: u64) -> Result<Fetched, String> {
 }
 
 /// Submit a form with POST (`application/x-www-form-urlencoded`).
+/// The answer to a request made by a page script: status, final address, and body text.
+pub struct Reply {
+    pub status: u16,
+    pub url: String,
+    pub content_type: String,
+    pub body: String,
+}
+
+/// Send a request for a page script (`fetch`): any method, extra headers, an optional text body.
+/// Every status is an answer; the page decides what it means.
+pub fn request(
+    method: &str,
+    url: &str,
+    headers: &[(String, String)],
+    body: Option<&str>,
+    max_bytes: u64,
+) -> Result<Reply, String> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("unsupported scheme: {url}"));
+    }
+    let agent = agent();
+    let text = body.unwrap_or("");
+    let sent = match method.to_ascii_uppercase().as_str() {
+        "POST" | "PUT" | "PATCH" => {
+            let mut req = match method.to_ascii_uppercase().as_str() {
+                "POST" => agent.post(url),
+                "PUT" => agent.put(url),
+                _ => agent.patch(url),
+            };
+            for (k, v) in headers {
+                req = req.header(k.as_str(), v.as_str());
+            }
+            req.send(text)
+        }
+        other => {
+            let mut req = match other {
+                "HEAD" => agent.head(url),
+                "DELETE" => agent.delete(url),
+                _ => agent.get(url),
+            };
+            for (k, v) in headers {
+                req = req.header(k.as_str(), v.as_str());
+            }
+            req.call()
+        }
+    };
+    let resp = sent.map_err(|e| format!("request failed: {e}"))?;
+    let status = resp.status().as_u16();
+    let url = resp.get_uri().to_string();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    let bytes = resp
+        .into_body()
+        .with_config()
+        .limit(max_bytes)
+        .read_to_vec()
+        .map_err(|e| format!("read failed: {e}"))?;
+    Ok(Reply { status, url, content_type, body: String::from_utf8_lossy(&bytes).into_owned() })
+}
+
 pub fn post_form(url: &str, fields: &[(String, String)], max_bytes: u64) -> Result<Fetched, String> {
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(format!("unsupported scheme: {url}"));
