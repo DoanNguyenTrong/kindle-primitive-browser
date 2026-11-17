@@ -211,12 +211,13 @@ impl Panel {
     }
 
     /// Copy `rows` rows of `width` gray pixels to row `y` and send the update with `wave`; `full` drives
-    /// every pixel (a flash with GC16). Returns `Ok(false)` without drawing when this path cannot draw the
-    /// screen as it is (turned, or another size), so the caller can use fbink.
+    /// every pixel (a flash with GC16). An upside-down screen (rotation 2) is drawn as it is: the panel shows the
+    /// memory unturned. Returns `Ok(false)` without drawing when this path cannot draw the screen as it is
+    /// (landscape, or another size), so the caller can use fbink.
     pub fn draw(&mut self, width: u32, y: u32, rows: u32, gray: &[u8], wave: u32, full: bool) -> Result<bool, String> {
         let fd = self.file.as_raw_fd();
         let var = var_info(fd)?;
-        let fits = var.rotate == 0
+        let fits = (var.rotate == 0 || var.rotate == 2)
             && var.xoffset == 0
             && var.xres == width
             && y + rows <= var.yres
