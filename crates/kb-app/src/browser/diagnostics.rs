@@ -97,8 +97,8 @@ impl Change {
             // Nothing here changes the system: the password file is left alone.
             Change::StartSsh => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
-                "elif [ -f /tmp/dropbear_browser.pid ] && kill -0 $(cat /tmp/dropbear_browser.pid) 2>/dev/null; then ",
-                "echo \"already running, pid $(cat /tmp/dropbear_browser.pid)\"; ",
+                "elif grep -i ':08AE ' /proc/net/tcp 2>/dev/null | grep -q ' 0A '; then ",
+                "echo 'port 2222 is already in use: stop the SSH server first'; ",
                 "else mkdir -p /mnt/us/browser/ssh; [ $(wc -c < /mnt/us/browser/ssh/dropbear.log 2>/dev/null || echo 0) -gt 262144 ] && mv /mnt/us/browser/ssh/dropbear.log /mnt/us/browser/ssh/dropbear.log.old; ",
                 "echo \"started $(date)\" >> /mnt/us/browser/ssh/dropbear.log; ",
                 "[ -f /mnt/us/browser/ssh/dropbear_ed25519_host_key ] || cp /mnt/us/koreader/settings/SSH/dropbear_ed25519_host_key /mnt/us/browser/ssh/ 2>/dev/null; ",
@@ -119,13 +119,16 @@ impl Change {
                 "echo \"ssh -p 2222 root@${ip:-no-address}\"; ",
                 "echo 'last SSH log lines:'; tail -n 8 /mnt/us/browser/ssh/dropbear.log 2>/dev/null || echo '(no SSH log yet: start SSH once)'; fi"
             ),
-            // Stops the listener and every session it started (their command lines name dropbear).
+            // Stops every dropbear process: the listener and the sessions it started (their command lines name
+            // dropbear). Not only the one in the pid file: a server started by another app holds the same port.
+            // The shell running this command is skipped (its command line names dropbear too).
             Change::StopSsh => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
-                "elif [ ! -f /tmp/dropbear_browser.pid ]; then echo 'SSH server is not running'; ",
-                "else for p in /proc/[0-9]*; do c=$(tr '\\0' ' ' 2>/dev/null < \"$p/cmdline\"); ",
-                "case \"$c\" in *dropbear*) kill ${p#/proc/} 2>/dev/null;; esac; done; ",
-                "sleep 1; rm -f /tmp/dropbear_browser.pid; echo 'SSH server stopped'; fi"
+                "else n=0; for p in /proc/[0-9]*; do pid=${p#/proc/}; [ \"$pid\" = \"$$\" ] && continue; ",
+                "c=$(tr '\\0' ' ' 2>/dev/null < \"$p/cmdline\"); ",
+                "case \"$c\" in *dropbear*) kill $pid 2>/dev/null && n=$((n+1));; esac; done; ",
+                "sleep 1; rm -f /tmp/dropbear_browser.pid; ",
+                "if [ $n -eq 0 ]; then echo 'SSH server was not running'; else echo \"SSH server stopped ($n processes)\"; fi; fi"
             ),
         }
     }
@@ -133,10 +136,13 @@ impl Change {
 
 /// Whether the SSH server is running: its pid file names a process that still exists.
 pub(crate) fn ssh_running() -> bool {
-    std::fs::read_to_string("/tmp/dropbear_browser.pid")
-        .ok()
-        .and_then(|pid| pid.trim().parse::<u32>().ok())
-        .is_some_and(|pid| std::path::Path::new(&format!("/proc/{pid}")).exists())
+    // Listening on port 2222 (0x08AE) in /proc/net/tcp, state 0A: whichever server holds the port.
+    std::fs::read_to_string("/proc/net/tcp").is_ok_and(|table| {
+        table.lines().any(|line| {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            fields.get(1).is_some_and(|local| local.ends_with(":08AE")) && fields.get(3) == Some(&"0A")
+        })
+    })
 }
 
 impl Browser {
