@@ -106,6 +106,12 @@ fn framebuffer_turn() -> Option<u32> {
     turn_from_fbink(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// The launcher's turn ("U" or "D" in /var/tmp/kl/orientation), used when neither source above has one.
+/// Written by Primitive Launcher, which keeps the framework stopped.
+fn launcher_turn() -> Option<u32> {
+    turn_from_framework(&std::fs::read_to_string("/var/tmp/kl/orientation").ok()?)
+}
+
 /// The turn now: the framework's, else the framebuffer's. Both are returned for the log.
 fn display_turn() -> (Option<u32>, Option<u32>) {
     (framework_turn(), framebuffer_turn())
@@ -117,7 +123,7 @@ fn display_turn_watch() {
     loop {
         thread::sleep(Duration::from_secs(1));
         let (framework, framebuffer) = display_turn();
-        let Some(turn) = framework.or(framebuffer) else { continue };
+        let Some(turn) = framework.or(framebuffer).or_else(launcher_turn) else { continue };
         if PANEL_ROTA.swap(turn, Ordering::Relaxed) != turn {
             log(&format!("display turned: rota {turn} (framework {framework:?}, framebuffer {framebuffer:?})"));
         }
