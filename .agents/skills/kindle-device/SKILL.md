@@ -41,6 +41,12 @@ Its files: `deploy/install-ssh.sh` (installer), `deploy/Browser.sh` (launcher), 
   started by the app (its Diagnostics page) or by KOReader. Two servers on one port is a common mistake: the
   second fails with "Address family not supported" or "Address already in use", and a stop that only checks
   its own pid file does nothing. Check the port: `grep -i ':08AE ' /proc/net/tcp` (0x08AE = 2222, state `0A`).
+- **Firewall**: the Kindle drops incoming connections by default (ping gets no reply, and a TCP connect times
+  out even though the server is listening and the device browses fine). Open the port in the server's start
+  command: `iptables -I INPUT -p tcp --dport 2222 -j ACCEPT` and `iptables -I OUTPUT -p tcp --sport 2222 -j
+  ACCEPT` (delete first with `-D` so starting twice does not add it twice). KOReader's SSH plugin does the same.
+  The rules last until the Kindle restarts, so a rule left by KOReader can make SSH work until the next restart.
+  Check with `iptables -L INPUT -n | grep 2222`.
 - Host key: copy `/mnt/us/koreader/settings/SSH/dropbear_ed25519_host_key` if the app's own copy is missing,
   so the Mac's known-hosts entry stays valid. Fingerprint check: `ssh-keyscan -p 2222 <ip> | ssh-keygen -lf -`.
 - **Password**: the user supplies it. Never write it into the repository, code, commit messages, logs or chat

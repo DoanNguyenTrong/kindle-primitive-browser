@@ -8,6 +8,17 @@ All notable changes to this project are recorded here. The format follows
 
 ### Added
 - The licence texts for the device tools (FBInk under GPL-3.0, Dropbear, zlib) are in `assets/device/licenses/`, with the source references for the FBInk and Dropbear binaries in `assets/device/README.md`. The release package and the device install carry them in `browser/bin/licenses/`.
+- Start SSH shows the root password: the one last set with Set SSH password (saved in `browser/ssh/password.txt`), or the device default before one is set.
+- The library icon is a portrait cover (600x920), like the book covers.
+- Project skills for Kindle work in `.agents/skills/`: `kindle-device` (access, install, debugging) and `kindle-eink` (framebuffer, waveforms, page turns, FBInk).
+
+### Fixed
+- SSH could not connect after the Kindle restarted: its firewall drops incoming connections, and only a rule left by KOReader's SSH plugin had let them through. Start SSH now opens port 2222 in the firewall (Stop SSH closes it, Check SSH reports it).
+- A key press on the on-screen keyboard flashed the whole row: the highlight update covered the full width of the row. Updates now carry the changed columns, and a key highlight sends only the key to the panel.
+- The screen went blank when the device was held upside down: the framebuffer reports rotation 2, and the in-process path only accepted rotation 0, so updates went to FBInk, which cannot show images. Rotation 2 is drawn as it is (the panel shows the memory unturned).
+
+### Changed
+- `deploy/install-ssh.sh` stops the browser before replacing its files; replacing a running program's file on the FAT storage can crash it (SIGBUS).
 
 ## [0.2.7] - 2026-11-17
 

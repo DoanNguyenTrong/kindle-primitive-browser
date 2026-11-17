@@ -124,7 +124,8 @@ pub struct Browser {
     /// Last composed screen, used to draw the tap highlight without re-rendering.
     last_gray: Vec<u8>,
     /// Rows of the highlight shown by `press`, to be restored on the next frame.
-    pressed_rows: Option<(u32, u32)>,
+    /// The tap highlight on screen: its columns and rows, taken back by the next frame.
+    pressed_rows: Option<((u32, u32), (u32, u32))>,
     /// Receives a frame as soon as a navigation starts, so the address bar shows the new URL while the page loads.
     draw: Option<Box<dyn FnMut(Update)>>,
     /// The quick settings panel (dropped from the top edge) is open.

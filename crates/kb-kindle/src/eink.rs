@@ -210,16 +210,17 @@ impl Panel {
         Ok(Panel { file, map: map as *mut u8, len, line_length: fix.line_length as usize, marker: 0 })
     }
 
-    /// Copy `rows` rows of `width` gray pixels to row `y` and send the update with `wave`; `full` drives
-    /// every pixel (a flash with GC16). An upside-down screen (rotation 2) is drawn as it is: the panel shows the
-    /// memory unturned. Returns `Ok(false)` without drawing when this path cannot draw the screen as it is
-    /// (landscape, or another size), so the caller can use fbink.
-    pub fn draw(&mut self, width: u32, y: u32, rows: u32, gray: &[u8], wave: u32, full: bool) -> Result<bool, String> {
+    /// Copy the rectangle of `width` columns from column `x` and `rows` rows from row `y` (`gray` holds the
+    /// rectangle's rows, `width` pixels each) and send the update with `wave`; `full` drives every pixel (a flash
+    /// with GC16). An upside-down screen (rotation 2) is drawn as it is: the panel shows the memory unturned.
+    /// Returns `Ok(false)` without drawing when this path cannot draw the screen as it is (landscape, or another
+    /// size), so the caller can use fbink.
+    pub fn draw(&mut self, x: u32, width: u32, y: u32, rows: u32, gray: &[u8], wave: u32, full: bool) -> Result<bool, String> {
         let fd = self.file.as_raw_fd();
         let var = var_info(fd)?;
         let fits = (var.rotate == 0 || var.rotate == 2)
             && var.xoffset == 0
-            && var.xres == width
+            && x + width <= var.xres
             && y + rows <= var.yres
             && gray.len() >= (width * rows) as usize;
         if !fits {
@@ -227,19 +228,19 @@ impl Panel {
         }
         let w = width as usize;
         let base = var.yoffset as usize * self.line_length;
-        let last_end = base + (y as usize + rows as usize - 1) * self.line_length + w;
-        if rows == 0 || w > self.line_length || last_end > self.len {
+        let last_end = base + (y as usize + rows as usize - 1) * self.line_length + x as usize + w;
+        if rows == 0 || x as usize + w > self.line_length || last_end > self.len {
             return Ok(false);
         }
         for r in 0..rows as usize {
-            let dst = base + (y as usize + r) * self.line_length;
+            let dst = base + (y as usize + r) * self.line_length + x as usize;
             // SAFETY: the destination row is inside the mapping (checked above) and the source row inside `gray`.
             unsafe { std::ptr::copy_nonoverlapping(gray.as_ptr().add(r * w), self.map.add(dst), w) };
         }
         self.marker = self.marker.wrapping_add(1).max(1);
         let (hist_bw, hist_gray) = hist_waves(wave);
         let mut update = UpdateZelda {
-            region: Rect { top: y, left: 0, width, height: rows },
+            region: Rect { top: y, left: x, width, height: rows },
             waveform_mode: wave,
             update_mode: if full { UPDATE_MODE_FULL } else { UPDATE_MODE_PARTIAL },
             update_marker: self.marker,

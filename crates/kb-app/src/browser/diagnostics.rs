@@ -53,6 +53,10 @@ pub(crate) enum Change {
 /// Time allowed for a change. The copies are small, so this is generous.
 const CHANGE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// The root password last set with Set SSH password, written on the Kindle's storage (the browser shows it on
+/// Start SSH). Before it is set, the device's default is shown.
+pub(crate) const SSH_PASSWORD_FILE: &str = "/mnt/us/browser/ssh/password.txt";
+
 impl Change {
     pub(crate) fn title(self) -> &'static str {
         match self {
@@ -93,8 +97,10 @@ impl Change {
                 "r=$?; sync; mount -o remount,ro /; echo \"copy status $r\"; }; fi; ",
                 "id -u; cat /etc/resolv.conf"
             ),
-            // Starts the server with the root password already set on the device (set once, with `passwd`).
-            // Nothing here changes the system: the password file is left alone.
+            // Starts the server with the root password already set on the device (set once, with `passwd`), and
+            // opens port 2222 in the Kindle's firewall, which drops incoming connections by default (KOReader's SSH
+            // plugin does the same). The firewall rules last until the Kindle restarts. The password file is left
+            // alone. The port is opened even when the server is already running, so Start SSH also repairs access.
             Change::StartSsh => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
                 "elif grep -i ':08AE ' /proc/net/tcp 2>/dev/null | grep -q ' 0A '; then ",
@@ -105,8 +111,13 @@ impl Change {
                 "cd /mnt/us/browser/bin && LD_LIBRARY_PATH=/mnt/us/browser/lib ./dropbear -E -R -r /mnt/us/browser/ssh/dropbear_ed25519_host_key -p 2222 -P /tmp/dropbear_browser.pid 2>>/mnt/us/browser/ssh/dropbear.log; ",
                 "echo \"dropbear status $?\"; sleep 1; ",
                 "if [ -f /tmp/dropbear_browser.pid ]; then echo \"running, pid $(cat /tmp/dropbear_browser.pid), port 2222\"; fi; fi; ",
+                "if [ -d /mnt/us ]; then ipt=$(command -v iptables || echo /usr/sbin/iptables); ",
+                "$ipt -D INPUT -p tcp --dport 2222 -j ACCEPT 2>/dev/null; $ipt -D OUTPUT -p tcp --sport 2222 -j ACCEPT 2>/dev/null; ",
+                "if $ipt -I INPUT -p tcp --dport 2222 -j ACCEPT && $ipt -I OUTPUT -p tcp --sport 2222 -j ACCEPT; ",
+                "then echo 'firewall: port 2222 open'; else echo 'firewall: could not open port 2222'; fi; fi; ",
                 "ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2); ",
-                "echo \"ssh -p 2222 root@${ip:-no-address}\""
+                "echo \"ssh -p 2222 root@${ip:-no-address}\"; ",
+                "echo \"password: $(cat /mnt/us/browser/ssh/password.txt 2>/dev/null || echo 123456)\""
             ),
             // Read only: the server process, the listening socket (port 2222 is 0x08AE in /proc/net/tcp, state 0A),
             // and the address to connect to.
@@ -115,6 +126,8 @@ impl Change {
                 "else pid=$(cat /tmp/dropbear_browser.pid 2>/dev/null); ",
                 "if [ -n \"$pid\" ] && kill -0 $pid 2>/dev/null; then echo \"server process: running, pid $pid\"; else echo 'server process: not running'; fi; ",
                 "if grep -i ':08AE ' /proc/net/tcp 2>/dev/null | grep -q ' 0A '; then echo 'port 2222: listening'; else echo 'port 2222: not listening'; fi; ",
+                "ipt=$(command -v iptables || echo /usr/sbin/iptables); ",
+                "if $ipt -L INPUT -n 2>/dev/null | grep -q 'dpt:2222'; then echo 'firewall: port 2222 open'; else echo 'firewall: port 2222 closed (Start SSH opens it)'; fi; ",
                 "ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2); ",
                 "echo \"ssh -p 2222 root@${ip:-no-address}\"; ",
                 "echo 'last SSH log lines:'; tail -n 8 /mnt/us/browser/ssh/dropbear.log 2>/dev/null || echo '(no SSH log yet: start SSH once)'; fi"
@@ -128,6 +141,8 @@ impl Change {
                 "c=$(tr '\\0' ' ' 2>/dev/null < \"$p/cmdline\"); ",
                 "case \"$c\" in *dropbear*) kill $pid 2>/dev/null && n=$((n+1));; esac; done; ",
                 "sleep 1; rm -f /tmp/dropbear_browser.pid; ",
+                "ipt=$(command -v iptables || echo /usr/sbin/iptables); ",
+                "$ipt -D INPUT -p tcp --dport 2222 -j ACCEPT 2>/dev/null; $ipt -D OUTPUT -p tcp --sport 2222 -j ACCEPT 2>/dev/null; ",
                 "if [ $n -eq 0 ]; then echo 'SSH server was not running'; else echo \"SSH server stopped ($n processes)\"; fi; fi"
             ),
         }
@@ -243,7 +258,7 @@ impl Browser {
              elif ! mount -o remount,rw /; then echo 'could not make / writable: nothing changed'; \
              else echo 'root:{pw}' | chpasswd; r=$?; sync; \
              mount -o remount,ro / 2>/dev/null || echo 'system partition stays writable until restart'; \
-             if [ $r -eq 0 ]; then echo 'password set for root'; else echo 'could not set the password'; fi; fi"
+             if [ $r -eq 0 ]; then mkdir -p /mnt/us/browser/ssh && printf '%s\n' '{pw}' > {SSH_PASSWORD_FILE}; echo 'password set for root (shown by Start SSH)'; else echo 'could not set the password'; fi; fi"
         );
         self.fix_report = Some(run_fixed(
             "Set SSH password",
@@ -324,6 +339,26 @@ pub(crate) fn summary(out: &Output) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ssh_commands_open_and_close_port_2222_in_the_firewall() {
+        let start = Change::StartSsh.command();
+        assert!(start.contains("-I INPUT -p tcp --dport 2222 -j ACCEPT"));
+        assert!(start.contains("-I OUTPUT -p tcp --sport 2222 -j ACCEPT"));
+        // The rule is removed first, so starting twice does not add it twice.
+        assert!(start.find("-D INPUT -p tcp --dport 2222").unwrap() < start.find("-I INPUT -p tcp --dport 2222").unwrap());
+        let stop = Change::StopSsh.command();
+        assert!(stop.contains("-D INPUT -p tcp --dport 2222 -j ACCEPT"));
+        assert!(stop.contains("-D OUTPUT -p tcp --sport 2222 -j ACCEPT"));
+        assert!(Change::CheckSsh.command().contains("dpt:2222"));
+    }
+
+    #[test]
+    fn start_ssh_shows_the_password_last_set_or_the_default() {
+        let start = Change::StartSsh.command();
+        assert!(start.contains("password: $(cat /mnt/us/browser/ssh/password.txt 2>/dev/null || echo 123456)"));
+        assert_eq!(SSH_PASSWORD_FILE, "/mnt/us/browser/ssh/password.txt");
+    }
 
     #[test]
     fn ssh_passwords_must_be_safe_for_the_shell_command() {

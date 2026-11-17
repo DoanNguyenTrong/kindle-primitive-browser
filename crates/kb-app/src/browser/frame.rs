@@ -139,11 +139,17 @@ impl Browser {
     /// The current screen as an update. Only the rows that changed are marked
     /// for refresh; the rest of the buffer is still complete.
     pub fn frame(&mut self) -> Update {
-        // The highlight drawn by `press` must be taken back to normal here.
-        if let Some((a, b)) = self.pressed_rows.take() {
-            self.touch(a, b, Wave::Fast);
-        }
-        let (rows, wave) = self.change.take().unwrap_or(((0, self.height), Wave::Text));
+        // The highlight drawn by `press` is taken back here. When nothing else changed, only the key's own
+        // columns go back to the panel; otherwise the highlight's rows join the change, across the full width.
+        let pressed = self.pressed_rows.take();
+        let (rows, wave, cols) = match (self.change.take(), pressed) {
+            (None, Some((cols, rows))) => (rows, Wave::Fast, cols),
+            (None, None) => ((0, self.height), Wave::Text, (0, self.width)),
+            (Some((rows, wave)), None) => (rows, wave, (0, self.width)),
+            (Some((rows, wave)), Some((_, (a, b)))) => {
+                ((rows.0.min(a), rows.1.max(b)), wave.max(Wave::Fast), (0, self.width))
+            }
+        };
         let mut gray = if self.keyboard {
             self.compose_keyboard()
         } else {
@@ -163,6 +169,7 @@ impl Browser {
             width: self.width,
             height: self.height,
             rows,
+            cols,
             wave,
         }
     }

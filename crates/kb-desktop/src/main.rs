@@ -107,7 +107,7 @@ fn main() -> io::Result<()> {
                 let y: f32 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
                 if let Some(u) = b.press(x, y) {
                     write(&u, &out);
-                    eprintln!("[press] highlight rows {:?}", u.rows);
+                    eprintln!("[press] highlight rows {:?} cols {:?}", u.rows, u.cols);
                 } else {
                     eprintln!("[press] nothing tappable there");
                 }

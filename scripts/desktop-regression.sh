@@ -526,6 +526,15 @@ open $BASE/redirect_meta.html
 assert url $BASE/plain.html
 quit" "[assert] url $BASE/plain.html: PASS"
 
+# A key press highlights only that key: the update covers the key's columns and rows, not the whole row. The
+# device sends only that rectangle to the panel, so the rest of the row does not flash.
+run keyboard_press_highlights_one_key "open $BASE/form.html
+tapsel input[name=q]
+press 316 1157
+press 1150 1450
+press 120 1450
+quit" "[press] highlight rows (1098, 1222) cols (262, 378)" "[press] highlight rows (1362, 1486) cols (1076, 1252)" "[press] highlight rows (1362, 1486) cols (12, 188)"
+
 # The keyboard's third layer: "#+=" from the symbols layer, and "123" back.
 run keyboard_third_symbol_layer "open kbp://home
 action addr
