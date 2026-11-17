@@ -4,6 +4,11 @@ All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
 [Semantic Versioning](https://semver.org/). The workspace version is `0.2.7`, released as tag `v0.2.7`.
 
+## [Unreleased]
+
+### Added
+- The licence texts for the device tools (FBInk under GPL-3.0, Dropbear, zlib) are in `assets/device/licenses/`, with the source references for the FBInk and Dropbear binaries in `assets/device/README.md`. The release package and the device install carry them in `browser/bin/licenses/`.
+
 ## [0.2.7] - 2026-11-17
 
 ### Fixed

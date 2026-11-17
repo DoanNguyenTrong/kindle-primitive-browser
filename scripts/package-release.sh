@@ -43,6 +43,8 @@ cp assets/fonts/*.ttf assets/fonts/NOTO-LICENSE.txt "$STAGE/$NAME/browser/fonts/
 cp assets/device/armv7/fbink assets/device/armv7/dropbear "$STAGE/$NAME/browser/bin/"
 cp assets/device/armv7/libz.so.1 "$STAGE/$NAME/browser/lib/"
 cp assets/device/README.md "$STAGE/$NAME/browser/bin/README.md"
+mkdir -p "$STAGE/$NAME/browser/bin/licenses"
+cp assets/device/licenses/*.txt "$STAGE/$NAME/browser/bin/licenses/"
 
 # The launcher carries its icon in the header, as install.sh writes it.
 ICON_LINE="# Icon: data:image/png;base64,$(base64 < assets/primitive-launcher-icon.png | tr -d '\n')"

@@ -76,6 +76,11 @@ sync_file "$HERE/assets/device/armv7/fbink" /mnt/us/browser/bin/fbink
 sync_file "$HERE/assets/device/armv7/dropbear" /mnt/us/browser/bin/dropbear
 sync_file "$HERE/assets/device/armv7/libz.so.1" /mnt/us/browser/lib/libz.so.1
 $SSH 'chmod 755 /mnt/us/browser/bin/fbink /mnt/us/browser/bin/dropbear 2>/dev/null || true'
+# The licence texts and the source notes go with the binaries (GPL-3.0 needs the notice with the binary).
+$SSH 'mkdir -p /mnt/us/browser/bin/licenses'
+for doc in "$HERE"/assets/device/licenses/*.txt "$HERE/assets/device/README.md"; do
+    sync_file "$doc" "/mnt/us/browser/bin/licenses/$(basename "$doc")"
+done
 
 local_sum=$(shasum -a 256 "$BIN" | cut -c1-64)
 remote_sum=$($SSH 'sha256sum /mnt/us/browser/kb-kindle' | cut -c1-64)
