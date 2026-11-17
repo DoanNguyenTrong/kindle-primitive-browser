@@ -49,6 +49,11 @@ upload() {
     $SSH "cat > '$2.new' && sync && mv '$2.new' '$2'" < "$1"
     echo "copied: $2"
 }
+# Stop the browser before its files are replaced. A running program reads its program file from the disk as it
+# goes, and on the storage partition (FAT) an overwritten file can hand it other data: the browser then crashes
+# with SIGBUS. The launcher is stopped first (it restores the library on TERM and does not restart the browser).
+# The shell running this command is skipped: its own command line names the launcher too.
+$SSH 'me=$$; for p in /proc/[0-9]*; do pid=${p#/proc/}; [ "$pid" = "$me" ] && continue; c=$(tr "\0" " " 2>/dev/null < "$p/cmdline"); case "$c" in *"Primitive Browser.sh"*) kill -TERM $pid 2>/dev/null;; esac; done; sleep 3; for p in /proc/[0-9]*; do pid=${p#/proc/}; [ "$pid" = "$me" ] && continue; c=$(tr "\0" " " 2>/dev/null < "$p/cmdline"); case "$c" in ./kb-kindle*|*/kb-kindle*) kill -TERM $pid 2>/dev/null;; esac; done; sleep 2'
 upload "$BIN" /mnt/us/browser/kb-kindle
 upload "$LAUNCHER_TMP" "/mnt/us/documents/$LAUNCHER"
 upload "$LOGO_PNG" /mnt/us/browser/icon.png
