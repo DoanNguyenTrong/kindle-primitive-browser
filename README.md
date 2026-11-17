@@ -131,7 +131,7 @@ macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 | Kindle Oasis 3 (1264 × 1680, firmware 5.18.2) | ✅ Verified on hardware |
 | Other Kindle models | 🛠️ Not supported yet. See [device support](docs/DEVICES.md) for the plan. |
 
-**Current version: 0.2.6.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
+**Current version: 0.2.7.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
 observations are in [device notes](docs/device-notes.md).
 
 ## Limits

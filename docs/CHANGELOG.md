@@ -2,7 +2,15 @@
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
-[Semantic Versioning](https://semver.org/). The workspace version is `0.2.6`, released as tag `v0.2.6`.
+[Semantic Versioning](https://semver.org/). The workspace version is `0.2.7`, released as tag `v0.2.7`.
+
+## [0.2.7] - 2026-11-17
+
+### Fixed
+- Start SSH failed while another SSH server (KOReader's Dropbear) held port 2222, and Stop SSH did nothing, because it only acted on the browser's own pid file. Start SSH now refuses when the port is in use. Stop SSH stops every dropbear process. The SSH status reads the listening socket.
+
+### Changed
+- The browser's own Dropbear (`/mnt/us/browser/bin`, with the browser's host key) is the SSH server.
 
 ## [0.2.6] - 2026-11-17
 
