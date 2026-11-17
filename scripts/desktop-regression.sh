@@ -298,8 +298,11 @@ tapsel a[href=\"kb:display\"]
 tapsel a[href=\"kb:wave:page:REAGL\"]
 tapsel a[href=\"kb:wave:ui:GL16\"]
 tapsel a[href=\"kb:wave:flash:off\"]
+tapsel a[href=\"kb:wave:dither:on\"]
+tapsel a[href=\"kb:wave:solid:off\"]
+tapsel a[href=\"kb:wave:lines:off\"]
 tapsel a[href=\"kb:refresh\"]
-quit" "[ui] action kb:wave:page:REAGL" "[ui] action kb:wave:ui:GL16" "[ui] action kb:wave:flash:off" "[ui] action kb:refresh"
+quit" "[ui] action kb:wave:page:REAGL" "[ui] action kb:wave:ui:GL16" "[ui] action kb:wave:flash:off" "[ui] action kb:wave:dither:on" "[ui] action kb:wave:solid:off" "[ui] action kb:wave:lines:off" "[ui] action kb:refresh"
 
 # --- reading, saving, bookmarks, tabs ---------------------------------------------
 run reading_view "open $BASE/article.html

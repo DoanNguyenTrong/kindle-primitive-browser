@@ -53,10 +53,29 @@ upload "$BIN" /mnt/us/browser/kb-kindle
 upload "$LAUNCHER_TMP" "/mnt/us/documents/$LAUNCHER"
 upload "$LOGO_PNG" /mnt/us/browser/icon.png
 
-$SSH "rm -f '/mnt/us/documents/$OLD_LAUNCHER' '/mnt/us/documents/._$OLD_LAUNCHER'; \
-chmod 700 '/mnt/us/documents/$LAUNCHER' 2>/dev/null || true; \
-[ -f /mnt/us/browser/start.txt ] || echo https://news.ycombinator.com/ > /mnt/us/browser/start.txt; \
-rm -f /mnt/us/browser/._* '/mnt/us/documents/._$LAUNCHER'; sync"
+# Copy LOCAL to REMOTE when the device's copy differs (checked by SHA-256), so an unchanged install copies
+# nothing. Used for the fonts, the device tools (FBInk, Dropbear) and the library they need.
+sync_file() {
+    local_file_sum=$(shasum -a 256 "$1" | cut -c1-64)
+    remote_file_sum=$($SSH "sha256sum '$2' 2>/dev/null" | cut -c1-64 || true)
+    if [ "$local_file_sum" != "$remote_file_sum" ]; then
+        upload "$1" "$2"
+    fi
+}
+
+# The fonts the browser draws with (Noto, SIL Open Font License), with their license.
+$SSH 'mkdir -p /mnt/us/browser/fonts'
+for font in "$HERE"/assets/fonts/*.ttf "$HERE/assets/fonts/NOTO-LICENSE.txt"; do
+    sync_file "$font" "/mnt/us/browser/fonts/$(basename "$font")"
+done
+
+# The device tools: FBInk draws the e-ink updates, Dropbear is the SSH server. Dropbear needs zlib, in lib/.
+# The sources and licenses are in assets/device/README.md.
+$SSH 'mkdir -p /mnt/us/browser/bin /mnt/us/browser/lib'
+sync_file "$HERE/assets/device/armv7/fbink" /mnt/us/browser/bin/fbink
+sync_file "$HERE/assets/device/armv7/dropbear" /mnt/us/browser/bin/dropbear
+sync_file "$HERE/assets/device/armv7/libz.so.1" /mnt/us/browser/lib/libz.so.1
+$SSH 'chmod 755 /mnt/us/browser/bin/fbink /mnt/us/browser/bin/dropbear 2>/dev/null || true'
 
 local_sum=$(shasum -a 256 "$BIN" | cut -c1-64)
 remote_sum=$($SSH 'sha256sum /mnt/us/browser/kb-kindle' | cut -c1-64)

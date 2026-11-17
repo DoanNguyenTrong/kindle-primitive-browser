@@ -13,6 +13,10 @@ pub(crate) fn prepare_html(html: &str, settings: &Settings, placeholders: bool, 
     if settings.text_pct != 100 {
         css.push_str(&format!("html{{zoom:{}%}}", settings.text_pct));
     }
+    if settings.book_lines {
+        // One blank line between paragraphs: the paragraph gap is a whole line, so all lines share one grid.
+        css.push_str("p{margin-top:0!important;margin-bottom:1lh!important}");
+    }
     css.push_str("</style>");
     let lower = html.to_ascii_lowercase();
     if let Some(i) = lower.find("<head") {
@@ -56,6 +60,9 @@ mod tests {
         );
         assert!(out.starts_with("<!doctype html><html><head><style>"));
         assert!(out.contains("zoom:125%"));
+        assert!(out.contains("margin-bottom:1lh"));
+        let off = prepare_html("<p>x</p>", &Settings { book_lines: false, ..Settings::default() }, false, true);
+        assert!(!off.contains("1lh"));
         let plain = prepare_html("<!doctype html><p>x</p>", &Settings::default(), false, true);
         assert!(plain.starts_with("<!doctype html><style>"));
     }

@@ -18,6 +18,15 @@ use url::Url;
 pub use kb_js::Click as ClickKind;
 
 /// What a submitted form turns into.
+/// A line of text on the page (`Page::text_lines`), in device pixels from the top of the document.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextLine {
+    /// Top and bottom of the glyph box (typographic ascent and descent; tall marks may reach a little past).
+    pub top: f64,
+    pub baseline: f64,
+    pub bottom: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Submit {
     /// A GET request: navigate to this URL.
@@ -88,12 +97,14 @@ fn radios_named(doc: &blitz_dom::BaseDocument, name: &str) -> Vec<NodeId> {
 
 /// Font files to load (explicit list: the Kindle has no system fonts and
 /// fontconfig can't be cross-compiled). Families map onto CSS generics.
+/// The browser's own copy of Noto (SIL Open Font License, see `assets/fonts/NOTO-LICENSE.txt`), installed with
+/// the browser by `deploy/install-ssh.sh`. It does not depend on any other app on the Kindle.
 pub const DEFAULT_FONTS: &[&str] = &[
-    "/mnt/us/koreader/fonts/noto/NotoSans-Regular.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSans-Bold.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSans-Italic.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSerif-Regular.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSerif-Bold.ttf",
+    "/mnt/us/browser/fonts/NotoSans-Regular.ttf",
+    "/mnt/us/browser/fonts/NotoSans-Bold.ttf",
+    "/mnt/us/browser/fonts/NotoSans-Italic.ttf",
+    "/mnt/us/browser/fonts/NotoSerif-Regular.ttf",
+    "/mnt/us/browser/fonts/NotoSerif-Bold.ttf",
 ];
 
 /// Largest script we will run.
@@ -474,6 +485,63 @@ impl Page {
             stack.extend(node.children.iter().map(|&c| (c, y)));
         }
         bottom * s
+    }
+
+    /// Every line of text on the page as last laid out (after a paint), top to bottom, in device pixels from
+    /// the top of the document: the
+    /// glyph box (typographic ascent and descent) and the baseline. Lines of different boxes on the same row
+    /// (columns) are one entry. The positions follow the layout tree as the painter does: each box from its
+    /// layout parent, and an inline root's lines from its content box.
+    pub fn text_lines(&self) -> Vec<TextLine> {
+        let doc = self.doc.borrow();
+        let s = self.scale as f64;
+        let mut lines = Vec::new();
+        let mut stack = vec![(doc.root_element().id, 0.0f64)];
+        while let Some((id, parent_y)) = stack.pop() {
+            let Some(node) = doc.get_node(id) else { continue };
+            if !node.is_element() && !node.flags.is_inline_root() {
+                continue;
+            }
+            let layout = node.final_layout();
+            let y = parent_y + layout.location.y as f64;
+            if node.flags.is_inline_root() && layout.size.height > 0.0 {
+                if let Some(text) = node.element_data().and_then(|e| e.inline_layout_data.as_ref()) {
+                    // Line metrics are in layout units (CSS px times the layout's scale).
+                    let unit = text.layout.scale().max(f32::EPSILON) as f64;
+                    let origin = y + (layout.padding.top + layout.border.top) as f64 + text.block_offset as f64;
+                    for line in text.layout.lines() {
+                        let m = line.metrics();
+                        if m.advance <= 0.0 {
+                            continue;
+                        }
+                        lines.push(TextLine {
+                            top: (origin + m.content_block_min_coord as f64 / unit) * s,
+                            baseline: (origin + m.baseline as f64 / unit) * s,
+                            bottom: (origin + m.content_block_max_coord as f64 / unit) * s,
+                        });
+                    }
+                }
+            }
+            let children = node.layout_children.borrow();
+            let kids: Vec<NodeId> = match children.as_ref() {
+                Some(c) => c.iter().copied().collect(),
+                None => node.children.iter().copied().collect(),
+            };
+            stack.extend(kids.into_iter().map(|c| (c, y)));
+        }
+        lines.sort_by(|a, b| a.baseline.total_cmp(&b.baseline));
+        // Lines on the same row (side by side) count once, covering both glyph boxes.
+        let mut merged: Vec<TextLine> = Vec::with_capacity(lines.len());
+        for l in lines {
+            match merged.last_mut() {
+                Some(prev) if (l.baseline - prev.baseline).abs() < 2.0 => {
+                    prev.top = prev.top.min(l.top);
+                    prev.bottom = prev.bottom.max(l.bottom);
+                }
+                _ => merged.push(l),
+            }
+        }
+        merged
     }
 
     pub fn max_scroll(&self) -> f64 {
@@ -1258,6 +1326,60 @@ pub fn extract_title(html: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_lines_are_where_the_text_is_painted() {
+        // The repository's copy of the fonts; the device reads its own copy in /mnt/us/browser/fonts. Fonts load once per thread.
+        let font = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/NotoSans-Regular.ttf");
+        std::env::set_var("KB_FONTS", font);
+        let para = "Nói xong, hắn lấy ra một chiếc hộp ngọc. Sau khi mở nắp, một luồng hàn khí tỏa ra, bên trong lộ ra năm hạt sen đỏ như máu. ";
+        let html = format!(
+            "<!doctype html><html><head><style>body{{margin:12px;font:20px sans-serif;line-height:1.8}}p{{margin:0 0 1lh}}</style></head><body><h2>Chương 1</h2>{}</body></html>",
+            (0..12).map(|i| format!("<p>{}</p>", para.repeat(1 + i % 3))).collect::<String>()
+        );
+        let mut page = Page::new_scaled(&html, "https://example.org/", 600, 800,
+            Arc::new(SyncNet::new(1024)), &mut || true, Some(300.0));
+        // Lines are read from the layout, which the first paint settles (the browser always paints first).
+        page.render_gray();
+        let lines = page.text_lines();
+        assert!(lines.len() > 30, "{} lines", lines.len());
+        // With paragraphs one line apart, the body text sits on one grid: every gap is a whole number of lines.
+        let body: Vec<f64> = lines.iter().skip(1).map(|l| l.baseline).collect();
+        let pitch = body[1] - body[0];
+        for pair in body.windows(2) {
+            let n = (pair[1] - pair[0]) / pitch;
+            assert!((n - n.round()).abs() < 0.02, "gap {} is not whole lines of {pitch}", pair[1] - pair[0]);
+        }
+        // The painted text: rows with ink, as bands; each band's dense part ends at its baseline.
+        page.scroll_to(700.0);
+        let gray = page.render_gray();
+        let (w, h) = (600usize, 800usize);
+        let ink: Vec<usize> = (0..h).map(|y| gray[y * w..(y + 1) * w].iter().filter(|&&p| p < 128).count()).collect();
+        let mut painted = Vec::new();
+        let mut y = 0;
+        while y < h {
+            if ink[y] == 0 {
+                y += 1;
+                continue;
+            }
+            let start = y;
+            while y < h && ink[y] > 0 {
+                y += 1;
+            }
+            let band = &ink[start..y];
+            let peak = *band.iter().max().unwrap();
+            let last = band.iter().rposition(|&c| c * 2 > peak).unwrap();
+            // Whole bands only (not cut by the screen edges).
+            if start > 0 && y < h {
+                painted.push((start + last) as f64);
+            }
+        }
+        assert!(painted.len() > 5);
+        for b in painted {
+            let near = lines.iter().map(|l| (l.baseline - 700.0 - b).abs()).fold(f64::MAX, f64::min);
+            assert!(near <= 2.0, "painted baseline {b} is {near} rows from the nearest layout line");
+        }
+    }
 
     #[test]
     fn internal_location_keeps_the_web_base_for_relative_links() {

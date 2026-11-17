@@ -9,8 +9,8 @@ yet. See [device support](DEVICES.md). Installing on an unsupported model is at 
 ## What you need
 
 1. **A jailbroken Kindle** with a USB data cable.
-2. **FBInk** installed at `/mnt/us/libkh/bin/fbink`. The FBInk tools come with KPM / KOReader on a
-   jailbroken Kindle. The browser draws the screen with this program.
+2. **FBInk** is installed with the browser at `/mnt/us/browser/bin/fbink`. `deploy/install-ssh.sh` copies it from
+   `assets/device/armv7/`. The browser uses it to draw the screen when in-process drawing is not used.
 3. **The release package**, `primitive-browser-<version>.zip`, from the
    [Releases](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases) page, and its `.sha256` file.
 
@@ -79,7 +79,7 @@ and files are not affected.
 - **The library shows a blank screen after you exit.** Create an empty file named `stop-framework` in
   the `browser/` folder on the Kindle. The browser will then stop and restart the Kindle's framework
   on exit. This is slower, but it is the fallback.
-- **The browser does not open.** Check that FBInk is at `/mnt/us/libkh/bin/fbink`.
+- **The browser does not open.** Check that FBInk is at `/mnt/us/browser/bin/fbink`; running `deploy/install-ssh.sh` again puts it there.
 - **Log.** `browser/log-browser.txt` records what the launcher and the browser did. Include its last
   lines when you report a problem.
 - **macOS adds `._` files** when you copy to a Kindle. They are harmless. You can delete them.

@@ -20,7 +20,7 @@ pub(crate) const CHECKS: &[(&str, &str)] = &[
     ("Browser files", "ls -l /mnt/us/browser 2>&1"),
     (
         "SSH server",
-        "if [ -f /tmp/dropbear_koreader.pid ] && kill -0 $(cat /tmp/dropbear_koreader.pid) 2>/dev/null; then echo \"running, pid $(cat /tmp/dropbear_koreader.pid), port 2222\"; else echo 'not running'; fi",
+        "if [ -f /tmp/dropbear_browser.pid ] && kill -0 $(cat /tmp/dropbear_browser.pid) 2>/dev/null; then echo \"running, pid $(cat /tmp/dropbear_browser.pid), port 2222\"; else echo 'not running'; fi",
     ),
     // /proc lists every process with its command line; busybox ps did not show the browser on the device.
     (
@@ -97,13 +97,14 @@ impl Change {
             // Nothing here changes the system: the password file is left alone.
             Change::StartSsh => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
-                "elif [ -f /tmp/dropbear_koreader.pid ] && kill -0 $(cat /tmp/dropbear_koreader.pid) 2>/dev/null; then ",
-                "echo \"already running, pid $(cat /tmp/dropbear_koreader.pid)\"; ",
+                "elif [ -f /tmp/dropbear_browser.pid ] && kill -0 $(cat /tmp/dropbear_browser.pid) 2>/dev/null; then ",
+                "echo \"already running, pid $(cat /tmp/dropbear_browser.pid)\"; ",
                 "else mkdir -p /mnt/us/browser/ssh; [ $(wc -c < /mnt/us/browser/ssh/dropbear.log 2>/dev/null || echo 0) -gt 262144 ] && mv /mnt/us/browser/ssh/dropbear.log /mnt/us/browser/ssh/dropbear.log.old; ",
                 "echo \"started $(date)\" >> /mnt/us/browser/ssh/dropbear.log; ",
-                "cd /mnt/us/koreader && ./dropbear -E -R -p 2222 -P /tmp/dropbear_koreader.pid 2>>/mnt/us/browser/ssh/dropbear.log; ",
+                "[ -f /mnt/us/browser/ssh/dropbear_ed25519_host_key ] || cp /mnt/us/koreader/settings/SSH/dropbear_ed25519_host_key /mnt/us/browser/ssh/ 2>/dev/null; ",
+                "cd /mnt/us/browser/bin && LD_LIBRARY_PATH=/mnt/us/browser/lib ./dropbear -E -R -r /mnt/us/browser/ssh/dropbear_ed25519_host_key -p 2222 -P /tmp/dropbear_browser.pid 2>>/mnt/us/browser/ssh/dropbear.log; ",
                 "echo \"dropbear status $?\"; sleep 1; ",
-                "if [ -f /tmp/dropbear_koreader.pid ]; then echo \"running, pid $(cat /tmp/dropbear_koreader.pid), port 2222\"; fi; fi; ",
+                "if [ -f /tmp/dropbear_browser.pid ]; then echo \"running, pid $(cat /tmp/dropbear_browser.pid), port 2222\"; fi; fi; ",
                 "ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2); ",
                 "echo \"ssh -p 2222 root@${ip:-no-address}\""
             ),
@@ -111,7 +112,7 @@ impl Change {
             // and the address to connect to.
             Change::CheckSsh => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing to check'; ",
-                "else pid=$(cat /tmp/dropbear_koreader.pid 2>/dev/null); ",
+                "else pid=$(cat /tmp/dropbear_browser.pid 2>/dev/null); ",
                 "if [ -n \"$pid\" ] && kill -0 $pid 2>/dev/null; then echo \"server process: running, pid $pid\"; else echo 'server process: not running'; fi; ",
                 "if grep -i ':08AE ' /proc/net/tcp 2>/dev/null | grep -q ' 0A '; then echo 'port 2222: listening'; else echo 'port 2222: not listening'; fi; ",
                 "ip=$(ifconfig wlan0 2>/dev/null | grep -o 'inet addr:[0-9.]*' | cut -d: -f2); ",
@@ -121,10 +122,10 @@ impl Change {
             // Stops the listener and every session it started (their command lines name dropbear).
             Change::StopSsh => concat!(
                 "if [ ! -d /mnt/us ]; then echo 'not a Kindle: nothing changed'; ",
-                "elif [ ! -f /tmp/dropbear_koreader.pid ]; then echo 'SSH server is not running'; ",
+                "elif [ ! -f /tmp/dropbear_browser.pid ]; then echo 'SSH server is not running'; ",
                 "else for p in /proc/[0-9]*; do c=$(tr '\\0' ' ' 2>/dev/null < \"$p/cmdline\"); ",
                 "case \"$c\" in *dropbear*) kill ${p#/proc/} 2>/dev/null;; esac; done; ",
-                "sleep 1; rm -f /tmp/dropbear_koreader.pid; echo 'SSH server stopped'; fi"
+                "sleep 1; rm -f /tmp/dropbear_browser.pid; echo 'SSH server stopped'; fi"
             ),
         }
     }
@@ -132,7 +133,7 @@ impl Change {
 
 /// Whether the SSH server is running: its pid file names a process that still exists.
 pub(crate) fn ssh_running() -> bool {
-    std::fs::read_to_string("/tmp/dropbear_koreader.pid")
+    std::fs::read_to_string("/tmp/dropbear_browser.pid")
         .ok()
         .and_then(|pid| pid.trim().parse::<u32>().ok())
         .is_some_and(|pid| std::path::Path::new(&format!("/proc/{pid}")).exists())

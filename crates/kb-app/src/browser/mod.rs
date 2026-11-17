@@ -28,6 +28,7 @@ mod input;
 mod internal;
 mod keyboard;
 mod library;
+mod lines;
 mod loading;
 mod nav;
 mod session;

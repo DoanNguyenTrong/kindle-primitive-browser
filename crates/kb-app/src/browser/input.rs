@@ -41,10 +41,48 @@ impl Browser {
         }
     }
 
-    /// Scroll by one screen (`dir` = +1 down, -1 up), keeping a little overlap.
+    /// Turn one screen (`dir` = +1 down, -1 up), as a book reader does: no overlap, and the text lines of
+    /// the new screen on the rows of the old one (see `lines`). A turn forward hides the bars; a turn back
+    /// leaves them as they are (they would move the page by their height, off the line rows).
     pub fn page_step(&mut self, dir: f64) {
-        let step = (self.height - TOP_H) as f64 * 0.9 * dir;
-        self.scroll(step);
+        if self.quick || self.keyboard || self.sheet.is_some() || self.page.is_none() {
+            // The panel, keyboard or sheet takes it as a swipe.
+            self.scroll((self.height - TOP_H) as f64 * 0.9 * dir);
+            return;
+        }
+        let step = self.turn_distance(dir);
+        if dir > 0.0 && self.chrome {
+            self.set_chrome(false);
+        }
+        if let Some(page) = self.page.as_mut() {
+            page.scroll_by(step);
+            self.page_dirty = true;
+            self.touch(0, self.height, Wave::Text);
+        }
+    }
+
+    /// How far a page turn scrolls (device pixels). Aligned to the page's text lines; without text, a whole
+    /// screen without overlap: forward the next screen starts where the visible part ended, back it ends
+    /// where the visible part began.
+    pub(super) fn turn_distance(&self, dir: f64) -> f64 {
+        let top = self.page_offset() as f64;
+        let bottom = if self.chrome { self.height - BOT_H } else { self.height } as f64;
+        // Forward hides the bars; back keeps them as they are.
+        let (next_top, next_bottom) = if dir > 0.0 { (0.0, self.height as f64) } else { (top, bottom) };
+        let plain = if dir > 0.0 { bottom - top } else { -(next_bottom - next_top) };
+        let Some(page) = self.page.as_ref() else { return plain };
+        let turn = lines::Turn {
+            scroll: page.scroll_y(),
+            max_scroll: page.max_scroll(),
+            top,
+            bottom,
+            next_top,
+            next_bottom,
+        };
+        match lines::turn_to(&page.text_lines(), &turn, dir) {
+            Some(to) => to - turn.scroll,
+            None => plain,
+        }
     }
 
     /// Long press on a link opens it in a new tab.
@@ -239,7 +277,9 @@ impl Browser {
         if self.chrome != visible {
             self.chrome = visible;
             // The page moves below the address bar when the bars are shown, so repaint it at text quality.
-            self.mark_page_dirty();
+            // The page itself is unchanged: the cached screens are keyed by offset and stay valid, so the
+            // cache is kept (clearing it here threw away the prefetched screens at every change of direction).
+            self.page_dirty = true;
             self.touch(0, self.height, Wave::Text);
         }
     }

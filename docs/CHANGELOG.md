@@ -2,9 +2,34 @@
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
-[Semantic Versioning](https://semver.org/). The workspace version is `0.2.1`, released as tag `v0.2.1`.
+[Semantic Versioning](https://semver.org/). The workspace version is `0.2.6`, released as tag `v0.2.6`.
 
-## [Unreleased]
+## [0.2.6] - 2026-11-17
+
+Device builds 0.2.2 to 0.2.5 are part of this release; they were not tagged.
+
+### Added
+- Display sheet, SOLID TEXT (on by default, saved as `solid_text`): near-black page pixels are drawn pure black and near-white pure white (the two panel steps next to each: 0, 17, 34 -> 0 and 221, 238, 255 -> 255). Anti-aliased edges keep their grays.
+- Display sheet, BOOK LINES (on by default, saved as `book_lines`): paragraphs are spaced by one blank line, so the text of the pages sits on one grid.
+- Page turns like a book reader's: no overlap. A turn scrolls to the next text line on the page's line grid, so the lines of the new screen land on the rows of the old one. Pages without text lines turn by a whole screen.
+- Display sheet, PAGE TURN DITHERING (saved as `page_dither`): On dithers page content in the browser with an ordered 8x8 pattern. Off by default.
+- The browser draws page turns in-process: it writes the framebuffer and sends the e-ink update itself. A turn reaches the panel about 45 ms after the button press, down from 280-1340 ms.
+- The device tools and fonts ship with the browser: FBInk (`/mnt/us/browser/bin/fbink`), Dropbear and its zlib, and Noto (`/mnt/us/browser/fonts`). Nothing else needs to be installed on the Kindle. See `assets/device/README.md`.
+- `deploy/install-ssh.sh` copies the fonts and device tools by SHA-256, so an unchanged install copies nothing. The release package includes them too.
+- `tuning.txt` in the browser folder can change the prefetch delay and in-process drawing without a rebuild (for measurement).
+
+### Fixed
+- Every page turn flashed (black in Day, white in Night). Sites set text in a dark gray such as `#111`, so each letter was a gray level; the panel reaches a gray by passing through the opposite extreme, so every letter flashed. Measured on the Oasis 3: pages with pure black or white letters did not flash in AUTO, GL16, REAGL, GC16 partial or DU. SOLID TEXT draws such letters pure. Button presses were checked and were not the cause.
+- Page content is cut to the panel's 16 gray steps before it is sent, which cut the driver's transition count from about 2,800-3,350 to about 100-580 (stock reader: 139-484), so the driver's own flash pass no longer runs. `KB_QUANTIZE=0` turns it off.
+- The browser could stop updating the screen with page dithering on: the FBInk build on the Kindle cannot dither images, so each turn failed. Dithering now runs in the browser.
+- The screen's orientation was read from FBInk, which crashed on `-e` with the FBInk 1.25 build (the browser logged `framebuffer None`). The bundled FBInk build reads it correctly.
+- Exit needed two taps: the first Exit crashed while the browser was being dropped (SIGBUS), so the launcher restarted it. The browser now leaves right after saving and clearing the screen.
+- Opening the address bar no longer drops the cached screens; the screen before the current one is prefetched as well as the next.
+- Prefetch waits for the panel to finish a page turn before it renders the neighbouring screens.
+
+### Changed
+- The SSH server is the browser's own Dropbear, run from `/mnt/us/browser/bin` with its own host key in `/mnt/us/browser/ssh/`. The first Start SSH copies the host key that the KOReader install used, so the server keeps its fingerprint. Its pid file is `/tmp/dropbear_browser.pid`.
+- The Set SSH password help no longer shows the default password.
 
 ## [0.2.1] - 2026-11-17
 

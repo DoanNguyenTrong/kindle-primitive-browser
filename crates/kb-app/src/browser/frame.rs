@@ -46,27 +46,40 @@ impl Browser {
         kb_top(self.height)
     }
 
-    /// Render the screen after the current one while the reader is idle, so the next page turn copies it.
-    /// A scroll down hides the bars, so the screen is kept as it looks then.
+    /// Render the screens next to the current one while the reader is idle, so a page turn either way
+    /// copies one. A turn forward hides the bars and a turn back keeps them, so each is kept as it looks
+    /// then. One screen per call: a button pressed during it waits for one render at most.
     pub(super) fn prefetch_next_screen(&mut self) {
         if self.page_dirty || self.sheet.is_some() || self.keyboard || self.quick {
             return;
         }
-        let step = (self.height - TOP_H) as f64 * 0.9;
-        let Some(page) = self.page.as_mut() else { return };
-        let current = page.scroll_y();
-        let target = (current + step).min(page.max_scroll());
-        if target <= current {
+        let (current, max) = match self.page.as_ref() {
+            Some(p) => (p.scroll_y(), p.max_scroll()),
+            None => return,
+        };
+        // The same distances a page turn will use, so the turn finds its screen here.
+        let next = (current + self.turn_distance(1.0)).min(max);
+        let prev = (current + self.turn_distance(-1.0)).max(0.0);
+        let mut wanted = Vec::new();
+        if next > current {
+            wanted.push((next, 0));
+        }
+        if prev < current {
+            // A turn back keeps the bars as they are.
+            wanted.push((prev, self.page_offset()));
+        }
+        for (target, offset) in wanted {
+            let key = (target.round() as u64, offset);
+            if self.page_cache.iter().any(|(k, _)| *k == key) {
+                continue;
+            }
+            let Some(page) = self.page.as_mut() else { return };
+            page.scroll_to(target);
+            let gray = page.render_gray_at(offset);
+            page.scroll_to(current);
+            self.cache_screen(key, gray);
             return;
         }
-        let key = (target.round() as u64, 0);
-        if self.page_cache.iter().any(|(k, _)| *k == key) {
-            return;
-        }
-        page.scroll_to(target);
-        let gray = page.render_gray_at(0);
-        page.scroll_to(current);
-        self.cache_screen(key, gray);
     }
 
     /// Called regularly by the driver (on idle). Brings in held-back images and
@@ -159,6 +172,16 @@ impl Browser {
         (self.settings.page_wave.clone(), self.settings.ui_wave.clone())
     }
 
+    /// Whether page turns are dithered in software (Display sheet).
+    pub fn page_dither(&self) -> bool {
+        self.settings.page_dither
+    }
+
+    /// Whether near-black and near-white page pixels are drawn pure (Display sheet).
+    pub fn solid_text(&self) -> bool {
+        self.settings.solid_text
+    }
+
     /// Push the current screen to the draw sink now (used while a load is still running).
     pub(super) fn emit_frame(&mut self) {
         if self.draw.is_none() {
@@ -180,7 +203,8 @@ impl Browser {
     pub(super) fn cache_screen(&mut self, key: (u64, u32), gray: Vec<u8>) {
         self.page_cache.retain(|(k, _)| *k != key);
         self.page_cache.push((key, gray));
-        if self.page_cache.len() > 3 {
+        // The current screen and both neighbours, plus one.
+        if self.page_cache.len() > 4 {
             self.page_cache.remove(0);
         }
     }
@@ -359,13 +383,16 @@ impl Browser {
             ),
             Sheet::Tabs => format!("tabs|{}|{:?}", self.active, tabs),
             Sheet::Display => format!(
-                "display|{}|{}|{}|{}|{}|{}|{}",
+                "display|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
                 self.settings.text_pct,
                 self.settings.page_width,
                 self.settings.night,
                 self.settings.page_wave,
                 self.settings.ui_wave,
                 self.settings.flash_on_load,
+                self.settings.page_dither,
+                self.settings.solid_text,
+                self.settings.book_lines,
                 self.page_is_web && !crate::storage::scripts_off(&super::loading::host_of(&self.url))
             ),
             Sheet::Choice => format!("choice|{}|{:?}", self.choice_title, self.choice_options),
@@ -389,6 +416,9 @@ impl Browser {
                     &self.settings.page_wave,
                     &self.settings.ui_wave,
                     self.settings.flash_on_load,
+                    self.settings.page_dither,
+                    self.settings.solid_text,
+                    self.settings.book_lines,
                 ),
             };
             let mut c =

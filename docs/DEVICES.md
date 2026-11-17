@@ -28,7 +28,7 @@ become per-device data before another model can run.
 | Battery and charger | `crates/kb-kindle/src/device.rs` (`BATTERY_SYSFS`, `CHARGING_SYSFS`, `CHARGER_STATUS_SYSFS`) | `max77796-battery` and `max77796-charger` |
 | Screen orientation | `crates/kb-kindle/src/main.rs` (`display_turn`) | `com.lab126.winmgr accelerometer`, with FBInk as fallback |
 | Framework and window manager | `deploy/Browser.sh` | `pillow` status bar, `lab126_gui` upstart job |
-| FBInk | `crates/kb-kindle/src/main.rs` (`FBINK`) | `/mnt/us/libkh/bin/fbink` |
+| FBInk | `crates/kb-kindle/src/main.rs` (`FBINK`) | `/mnt/us/browser/bin/fbink` |
 
 The Oasis 3 touch controller reports in its upright frame, and the browser turns each touch when the
 screen is upside down. Another model may report differently, so turning must be tested per device.

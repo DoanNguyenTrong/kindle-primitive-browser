@@ -75,8 +75,9 @@ Runtime files used on the device but not shipped in this repository:
 
 | File | Provided by | Notes |
 |---|---|---|
-| `/mnt/us/koreader/fonts/noto/*.ttf` | KOReader | Noto Sans and Noto Serif (SIL Open Font License) |
-| `/mnt/us/libkh/bin/fbink` | KOReader package manager | FBInk, used for the e-ink update calls |
+| `/mnt/us/browser/fonts/*.ttf` | Primitive Browser (copied from `assets/fonts/` by `deploy/install-ssh.sh`) | Noto Sans and Noto Serif (SIL Open Font License) |
+| `/mnt/us/browser/bin/fbink` | Primitive Browser (copied from `assets/device/armv7/` by `deploy/install-ssh.sh`) | FBInk, used for the e-ink update calls |
+| `/mnt/us/browser/bin/dropbear`, `/mnt/us/browser/lib/libz.so.1` | Primitive Browser (same source) | SSH server and its zlib; host key `/mnt/us/browser/ssh/dropbear_ed25519_host_key` |
 | `upstart` `start`/`stop` or `/etc/init.d/framework` | Kindle firmware | Stops and restarts the Kindle UI framework |
 
 Fonts for the computer build are copied into `assets/fonts/` (Noto, OFL; licence text in

@@ -204,6 +204,25 @@ impl Browser {
                 // One full flash of the whole screen: clears the ghosting of the previous pages.
                 self.touch(0, self.height, Wave::Flash);
             }
+            "kb:wave:dither:on" | "kb:wave:dither:off" => {
+                self.settings.page_dither = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
+            "kb:wave:lines:on" | "kb:wave:lines:off" => {
+                self.settings.book_lines = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                // The page CSS changes: lay the page out again.
+                self.reflow();
+            }
+            "kb:wave:solid:on" | "kb:wave:solid:off" => {
+                self.settings.solid_text = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
             "kb:wave:flash:on" | "kb:wave:flash:off" => {
                 self.settings.flash_on_load = href.ends_with(":on");
                 self.settings.save();

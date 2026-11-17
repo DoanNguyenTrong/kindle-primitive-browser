@@ -250,6 +250,9 @@ pub fn display(
     page_wave: &str,
     ui_wave: &str,
     flash_on_load: bool,
+    page_dither: bool,
+    solid_text: bool,
+    book_lines: bool,
 ) -> String {
     let seg = |href: &str, label: &str, on: bool| {
         format!(r#"<a class="segbtn{}" href="{href}">{label}</a>"#, if on { " on" } else { "" })
@@ -279,6 +282,21 @@ pub fn display(
         on = seg("kb:wave:flash:on", "Flash on new page", flash_on_load),
         off = seg("kb:wave:flash:off", "No flash on new page", !flash_on_load),
     );
+    let dither = format!(
+        r#"<div class="section">PAGE TURN DITHERING</div><div class="seg">{on}{off}</div><div class="note">Dithering spreads each gray over neighbouring pixels in an ordered 8x8 pattern, so pages are drawn in the panel's own gray steps. Compare On and Off on the same page.</div>"#,
+        on = seg("kb:wave:dither:on", "On", page_dither),
+        off = seg("kb:wave:dither:off", "Off", !page_dither),
+    );
+    let solid = format!(
+        r#"<div class="section">SOLID TEXT</div><div class="seg">{on}{off}</div><div class="note">On draws near-black and near-white as pure black and white. Sites often set text in a dark gray, and gray letters flash on every page turn; pure letters change without the flash.</div>"#,
+        on = seg("kb:wave:solid:on", "On", solid_text),
+        off = seg("kb:wave:solid:off", "Off", !solid_text),
+    );
+    let lines = format!(
+        r#"<div class="section">BOOK LINES</div><div class="seg">{on}{off}</div><div class="note">On spaces paragraphs by one blank line, so the lines of the next page land on the rows of this one and a page turn changes as little of the screen as a book reader's.</div>"#,
+        on = seg("kb:wave:lines:on", "On", book_lines),
+        off = seg("kb:wave:lines:off", "Off", !book_lines),
+    );
     let body = format!(
         r#"<div class="sheet">
 <div class="section">TEXT SIZE</div>
@@ -287,13 +305,16 @@ pub fn display(
 <div class="seg">{widths}</div>
 <div class="note">Narrow suits phone layouts. Medium fits this screen. Wide shows more text per line.</div>
 <div class="section">THEME</div>
-<div class="seg">{day}{dark}</div>{site}<div class="section">PAGE REFRESH</div><div class="seg">{page_waves}</div><div class="section">BARS AND TAPS REFRESH</div><div class="seg">{ui_waves}</div>{refresh}</div>"#,
+<div class="seg">{day}{dark}</div>{site}<div class="section">PAGE REFRESH</div><div class="seg">{page_waves}</div><div class="section">BARS AND TAPS REFRESH</div><div class="seg">{ui_waves}</div>{solid}{lines}{refresh}{dither}</div>"#,
         day = seg("kb:nightoff", "Day", !night),
         dark = seg("kb:nighton", "Night", night),
         site = site,
         page_waves = page_waves,
         ui_waves = ui_waves,
         refresh = refresh,
+        dither = dither,
+        solid = solid,
+        lines = lines,
     );
     let extra = ".stepper{display:flex;align-items:center;gap:20px;margin:0 24px;height:104px}\
 .step{display:flex;align-items:center;justify-content:center;width:160px;height:96px;border:2px solid #111;border-radius:16px;font-size:36px;font-weight:bold;color:#111;text-decoration:none}\
@@ -761,7 +782,7 @@ pub fn diagnostics(report: Option<&[Report]>, fix: Option<&Report>, ssh_on: bool
     let intro = if report.is_some() {
         String::new()
     } else {
-        r#"<div class="empty">Runs read-only checks on this device: the shell, system, storage, Wi-Fi, DNS, the hosts file, browser files and processes. Set public DNS points this device at 1.1.1.1 and 8.8.8.8, also after Wi-Fi reconnects and restarts (the originals are saved first); Restore DNS puts them back. Start SSH runs an SSH server on port 2222. Set SSH password changes the root password; type it on the keyboard (starts as 123456), 6 to 64 letters, digits, or - _ . @ # % + = !.</div>"#.to_string()
+        r#"<div class="empty">Runs read-only checks on this device: the shell, system, storage, Wi-Fi, DNS, the hosts file, browser files and processes. Set public DNS points this device at 1.1.1.1 and 8.8.8.8, also after Wi-Fi reconnects and restarts (the originals are saved first); Restore DNS puts them back. Start SSH runs an SSH server on port 2222. Set SSH password changes the root password; type it on the keyboard, 6 to 64 letters, digits, or - _ . @ # % + = !.</div>"#.to_string()
     };
     let ssh_label = if ssh_on { "Stop SSH" } else { "Start SSH" };
     let actions = format!(

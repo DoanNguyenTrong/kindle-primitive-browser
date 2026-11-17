@@ -107,7 +107,7 @@ Community reports vary by model and firmware. Amazon publishes no official list 
 2. **Copy** the `browser` and `documents` folders onto your jailbroken Kindle, next to each other on its root.
 3. **Open** *Primitive Browser* from the Kindle library.
 
-You need FBInk at `/mnt/us/libkh/bin/fbink`, which KOReader and KPM provide. The full steps for
+The browser ships its own FBInk and Dropbear (see `assets/device/README.md`); nothing else needs to be installed on the Kindle. The full steps for
 macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 
 ## Highlights
@@ -131,7 +131,7 @@ macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 | Kindle Oasis 3 (1264 × 1680, firmware 5.18.2) | ✅ Verified on hardware |
 | Other Kindle models | 🛠️ Not supported yet. See [device support](docs/DEVICES.md) for the plan. |
 
-**Current version: 0.2.1.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
+**Current version: 0.2.6.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
 observations are in [device notes](docs/device-notes.md).
 
 ## Limits
