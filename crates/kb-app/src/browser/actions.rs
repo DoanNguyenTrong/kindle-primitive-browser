@@ -1,6 +1,7 @@
 //! Browser actions named by `kb:` links: the menu, the Display settings, and the toolbar.
 
 use super::*;
+use super::diagnostics::Change;
 use crate::LEVEL_MAX;
 
 pub(super) fn stays_open(href: &str) -> bool {
@@ -18,9 +19,23 @@ pub(super) fn stays_open(href: &str) -> bool {
     ) || href.starts_with("kb:font:")
         || href.starts_with("kb:width:")
         || href.starts_with("kb:closetab:")
+        || href.starts_with("kb:wave:")
+        || href == "kb:refresh"
 }
 
 impl Browser {
+    /// Turn scripts on or off for the current site, and load the page again so the change applies.
+    pub(super) fn set_site_scripts(&mut self, on: bool) {
+        let host = super::loading::host_of(&self.url);
+        if host.is_empty() || !self.page_is_web {
+            self.notify("Scripts are set per web site");
+            return;
+        }
+        crate::storage::set_scripts_off(&host, !on);
+        self.notify(if on { "Scripts are on for this site" } else { "Scripts are off for this site" });
+        self.reload();
+    }
+
     pub(super) fn chrome_action(&mut self, href: &str) {
         eprintln!(
             "[ui] action {href} (sheet={:?}, page={}, url={})",
@@ -78,6 +93,33 @@ impl Browser {
             self.set_width(w);
             return;
         }
+        if let Some(name) = href.strip_prefix("kb:wave:page:") {
+            if let Some(w) = crate::settings::PAGE_WAVES.iter().find(|w| **w == name) {
+                self.settings.page_wave = w.to_string();
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
+            return;
+        }
+        if let Some(name) = href.strip_prefix("kb:wave:ui:") {
+            if let Some(w) = crate::settings::UI_WAVES.iter().find(|w| **w == name) {
+                self.settings.ui_wave = w.to_string();
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
+            return;
+        }
+        if let Some(index) = href.strip_prefix("kb:pick:").and_then(|s| s.parse::<usize>().ok()) {
+            if let (Some(key), Some(page)) = (self.choice_key.take(), self.page.as_mut()) {
+                page.select_pick(key, index);
+                self.mark_page_dirty();
+            }
+            self.sheet = None;
+            self.touch(0, self.height, Wave::Text);
+            return;
+        }
         if let Some(which) = href.strip_prefix("kb:homeshow:") {
             match which {
                 "bm" => self.settings.home_bookmarks_open = !self.settings.home_bookmarks_open,
@@ -131,6 +173,13 @@ impl Browser {
             "kb:save" => self.save_offline(),
             "kb:marks" => self.open("kbp://bookmarks"),
             "kb:saved" => self.open("kbp://saved"),
+            "kb:diag" => self.run_diagnostics(),
+            "kb:dns:public" => self.run_change(Change::PublicDns),
+            "kb:dns:restore" => self.run_change(Change::RestoreDns),
+            "kb:ssh:toggle" => self.toggle_ssh(),
+            "kb:ssh:check" => self.run_change(Change::CheckSsh),
+            "kb:ssh:password" => self.begin_ssh_password(),
+            "kb:find" => self.begin_find(),
             "kb:display" => self.show_sheet(Sheet::Display),
             "kb:quickclose" => self.close_quick(),
             "kb:wifi" => {
@@ -151,6 +200,35 @@ impl Browser {
                 }
                 self.quick_changed();
             }
+            "kb:refresh" => {
+                // One full flash of the whole screen: clears the ghosting of the previous pages.
+                self.touch(0, self.height, Wave::Flash);
+            }
+            "kb:wave:dither:on" | "kb:wave:dither:off" => {
+                self.settings.page_dither = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
+            "kb:wave:lines:on" | "kb:wave:lines:off" => {
+                self.settings.book_lines = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                // The page CSS changes: lay the page out again.
+                self.reflow();
+            }
+            "kb:wave:solid:on" | "kb:wave:solid:off" => {
+                self.settings.solid_text = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
+            "kb:wave:flash:on" | "kb:wave:flash:off" => {
+                self.settings.flash_on_load = href.ends_with(":on");
+                self.settings.save();
+                self.sheet_layer = None;
+                self.touch(self.height - MENU_H, self.height, Wave::Text);
+            }
             "kb:images" => {
                 self.settings.images = !self.settings.images;
                 self.settings.save();
@@ -170,6 +248,8 @@ impl Browser {
                 self.set_night(self.settings.night);
             }
             "kb:nighton" => self.set_night(true),
+            "kb:scripts:on" => self.set_site_scripts(true),
+            "kb:scripts:off" => self.set_site_scripts(false),
             "kb:nightoff" => self.set_night(false),
             "kb:clearhistory" => {
                 self.visits.clear();

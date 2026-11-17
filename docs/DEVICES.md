@@ -28,7 +28,7 @@ become per-device data before another model can run.
 | Battery and charger | `crates/kb-kindle/src/device.rs` (`BATTERY_SYSFS`, `CHARGING_SYSFS`, `CHARGER_STATUS_SYSFS`) | `max77796-battery` and `max77796-charger` |
 | Screen orientation | `crates/kb-kindle/src/main.rs` (`display_turn`) | `com.lab126.winmgr accelerometer`, with FBInk as fallback |
 | Framework and window manager | `deploy/Browser.sh` | `pillow` status bar, `lab126_gui` upstart job |
-| FBInk | `crates/kb-kindle/src/main.rs` (`FBINK`) | `/mnt/us/libkh/bin/fbink` |
+| FBInk | `crates/kb-kindle/src/main.rs` (`FBINK`) | `/mnt/us/browser/bin/fbink` |
 
 The Oasis 3 touch controller reports in its upright frame, and the browser turns each touch when the
 screen is upside down. Another model may report differently, so turning must be tested per device.
@@ -52,7 +52,7 @@ hardware. They are not guessed.
 
 Each step is testable on the desktop build before a Kindle is involved.
 
-1. **Device profile (M1).** One table of per-model values in `kb-kindle`: screen size, touch name,
+1. **Device profile (M1).** Status: the per-model values are in one table, `crates/kb-kindle/src/profile.rs`, with the Oasis 3 as the only entry (values unchanged and pinned by a test). Still to do: detect the model, and add the other models' values from their devices. One table of per-model values in `kb-kindle`: screen size, touch name,
    page-button codes, power-supply paths, frontlight range, and the framework init type. Detect the
    model at start from the device, and fall back to the Oasis 3 profile only when it matches.
    The current Oasis 3 values stay as the default profile.

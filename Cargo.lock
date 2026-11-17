@@ -1040,24 +1040,25 @@ dependencies = [
 
 [[package]]
 name = "kb-app"
-version = "0.1.18"
+version = "0.2.6"
 dependencies = [
  "kb-engine",
  "kb-net",
+ "kb-term",
  "png 0.17.16",
  "url",
 ]
 
 [[package]]
 name = "kb-desktop"
-version = "0.1.18"
+version = "0.2.6"
 dependencies = [
  "kb-app",
 ]
 
 [[package]]
 name = "kb-engine"
-version = "0.1.18"
+version = "0.2.6"
 dependencies = [
  "anyrender_vello_cpu",
  "blitz-dom",
@@ -1073,17 +1074,18 @@ dependencies = [
 
 [[package]]
 name = "kb-js"
-version = "0.1.18"
+version = "0.2.6"
 dependencies = [
  "blitz-dom",
  "blitz-html",
  "blitz-traits",
+ "kb-net",
  "rquickjs",
 ]
 
 [[package]]
 name = "kb-kindle"
-version = "0.1.18"
+version = "0.2.6"
 dependencies = [
  "kb-app",
  "libc",
@@ -1091,10 +1093,17 @@ dependencies = [
 
 [[package]]
 name = "kb-net"
-version = "0.1.18"
+version = "0.2.6"
 dependencies = [
  "blitz-traits",
  "ureq",
+]
+
+[[package]]
+name = "kb-term"
+version = "0.2.6"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

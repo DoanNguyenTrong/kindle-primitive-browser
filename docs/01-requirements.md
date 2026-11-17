@@ -1,6 +1,6 @@
 # 1. Requirements
 
-Status date: 2026-11-16. Released baseline: 0.1.0; current changes are Unreleased.
+Status date: 2026-11-17. Latest release: 0.2.1; no changes are Unreleased.
 The [roadmap](04-roadmap.md) defines the next implementation milestones and release gates.
 
 ## 1.1 Purpose

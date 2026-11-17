@@ -6,6 +6,7 @@
 //! `fetch` is synchronous under a Promise. Not implemented: `innerHTML` reads,
 //! `document.write`, modules and imports, WebSockets, XHR.
 
+mod storage;
 use std::{
     cell::{Cell, RefCell},
     rc::Rc,
@@ -42,6 +43,8 @@ pub struct Js {
     deadline: Rc<Cell<Instant>>,
     /// An address the page script asked to load (`location.href = …`), until the browser takes it.
     nav: Rc<RefCell<Option<String>>>,
+    /// An address the page set with history.pushState/replaceState, until the browser shows it.
+    url_change: Rc<RefCell<Vec<(String, bool, String)>>>,
 }
 
 /// Page fetch hook: `(url) -> Option<[status, final_url, body]>`.
@@ -59,8 +62,9 @@ impl Js {
         let ctx = Context::full(&rt).map_err(|e| e.to_string())?;
         let url = url.to_string();
         let nav: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+        let url_change: Rc<RefCell<Vec<(String, bool, String)>>> = Rc::new(RefCell::new(Vec::new()));
         ctx.with(|ctx| -> rquickjs::Result<()> {
-            install_natives(&ctx, doc, http, nav.clone())?;
+            install_natives(&ctx, doc, http, nav.clone(), url_change.clone())?;
             ctx.globals().set("__kbUrl", url)?;
             ctx.globals().set("__kbCssWidth", width)?;
             ctx.globals().set("__kbCssHeight", height)?;
@@ -69,7 +73,7 @@ impl Js {
             Ok(())
         })
         .map_err(|e| format!("js init failed: {e}"))?;
-        Ok(Js { rt, ctx, deadline, nav })
+        Ok(Js { rt, ctx, deadline, nav, url_change })
     }
 
     /// Run one script. Errors are reported to stderr and do not stop the page.
@@ -114,6 +118,22 @@ impl Js {
         self.nav.borrow_mut().take()
     }
 
+    /// The address a script set with history.pushState or replaceState, if any (taken once).
+    pub fn take_url_changes(&self) -> Vec<(String, bool, String)> {
+        std::mem::take(&mut *self.url_change.borrow_mut())
+    }
+
+    /// Deliver popstate for an entry the page pushed: `state_json` is the state it was pushed with.
+    pub fn pop_state(&self, state_json: &str) {
+        self.deadline.set(Instant::now() + SLICE);
+        let _ = self.ctx.with(|ctx| -> rquickjs::Result<()> {
+            let kb: Object = ctx.globals().get("__kb")?;
+            let f: Function = kb.get("popState")?;
+            f.call::<_, ()>((state_json.to_string(),))
+        });
+        self.drain_jobs();
+    }
+
     /// Keep location reads consistent after the browser follows a fragment link.
     pub fn set_location(&self, url: &str) {
         self.deadline.set(Instant::now() + SLICE);
@@ -130,6 +150,23 @@ impl Js {
     }
 
     /// Dispatch a click at `node` through its ancestors.
+    /// Send an event of type `kind` (`input`, `change`, `submit`, ...) to the page's listeners on `node`.
+    pub fn event(&self, node: NodeId, kind: &str) -> Click {
+        self.deadline.set(Instant::now() + SLICE);
+        let id = node.as_u64() as f64;
+        let code = self.ctx.with(|ctx| -> rquickjs::Result<i32> {
+            let kb: Object = ctx.globals().get("__kb")?;
+            let f: Function = kb.get("event")?;
+            f.call((id, kind.to_string()))
+        });
+        self.drain_jobs();
+        match code {
+            Ok(1) => Click::Handled,
+            Ok(2) => Click::Prevented,
+            _ => Click::None,
+        }
+    }
+
     pub fn click(&self, node: NodeId) -> Click {
         self.deadline.set(Instant::now() + SLICE);
         let id = node.as_u64() as f64;
@@ -219,8 +256,10 @@ fn attr_name(local: &str) -> QualName {
     QualName::new(None, Namespace::from(""), LocalName::from(local))
 }
 
-fn install_natives(ctx: &Ctx<'_>, doc: Doc, http: HttpGet, nav: Rc<RefCell<Option<String>>>) -> rquickjs::Result<()> {
+fn install_natives(ctx: &Ctx<'_>, doc: Doc, http: HttpGet, nav: Rc<RefCell<Option<String>>>, url_change: Rc<RefCell<Vec<(String, bool, String)>>>) -> rquickjs::Result<()> {
     let n = Object::new(ctx.clone())?;
+    // setUrl(url, replace, stateJson): replace is true for replaceState and false for pushState.
+    n.set("setUrl", Function::new(ctx.clone(), move |url: String, replace: bool, state: String| { url_change.borrow_mut().push((url, replace, state)); })?)?;
 
     // ---- queries ----
     let d = doc.clone();
@@ -497,6 +536,8 @@ fn install_natives(ctx: &Ctx<'_>, doc: Doc, http: HttpGet, nav: Rc<RefCell<Optio
     n.set("httpRequest", Function::new(ctx.clone(), move |method: String, url: String, headers: Vec<String>, body: Option<String>| -> Option<Vec<String>> {
         guarded(|| h(&method, &url, &headers, body))
     })?)?;
+    n.set("storageLoad", Function::new(ctx.clone(), move |origin: String| -> String { storage::load(&origin) })?)?;
+    n.set("storageSave", Function::new(ctx.clone(), move |origin: String, json: String| -> bool { storage::save(&origin, &json) })?)?;
 
     // location.href = …, location.replace(…), window.location = …: ask the browser to load the address.
     n.set("navigate", Function::new(ctx.clone(), move |url: String| {

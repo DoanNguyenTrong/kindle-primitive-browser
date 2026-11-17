@@ -1,9 +1,10 @@
 //! Kindle driver. Reads touch and page-turn buttons from evdev, drives the
-//! browser, and shows each frame with the device's FBInk.
+//! browser, and shows each frame on the panel: in-process through the framebuffer (`eink`), or with
+//! the device's FBInk when that path cannot draw the screen as it is.
 //!
 //! Files (all under /mnt/us/browser):
 //!   start.txt  optional start URL (default: Hacker News)
-//!   frame.png  last frame, for debugging
+//!   /var/tmp/kb-frame.bmp  last frame, for debugging (RAM, not kept across restarts)
 //!   log         written by the launcher (stderr)
 
 use std::{
@@ -24,15 +25,17 @@ use std::{
 };
 
 mod device;
+mod eink;
+mod profile;
 
-use kb_app::{encode_png, Browser, Update, Wave, PROGRESS_H, TOP_H};
+use kb_app::{Browser, Update, Wave, PROGRESS_H, TOP_H};
 
 const DIR: &str = "/mnt/us/browser";
-const FBINK: &str = "/mnt/us/libkh/bin/fbink";
+const FBINK: &str = "/mnt/us/browser/bin/fbink";
 /// The panel's native frame: upright portrait. The touch controller always reports in this frame,
 /// whichever way the Kindle is turned, so touches are turned into the screen's frame here.
-const NATIVE_W: u32 = 1264;
-const NATIVE_H: u32 = 1680;
+const NATIVE_W: u32 = profile::ACTIVE.screen_w;
+const NATIVE_H: u32 = profile::ACTIVE.screen_h;
 
 /// The turn of the Kindle: 0 upright, 2 upside down (the left-handed portrait). The Kindle has no
 /// landscape, so the browser always draws the portrait screen.
@@ -54,7 +57,6 @@ fn page_buttons_swapped(rota: u32) -> bool {
     rota == 2
 }
 /// Full-screen flash every N partial refreshes, to clear e-ink ghosting.
-const FLASH_EVERY: u32 = 8;
 
 const EV_SYN: u16 = 0x00;
 const EV_KEY: u16 = 0x01;
@@ -63,8 +65,8 @@ const SYN_REPORT: u16 = 0x00;
 const ABS_MT_POSITION_X: u16 = 0x35;
 const ABS_MT_POSITION_Y: u16 = 0x36;
 const ABS_MT_TRACKING_ID: u16 = 0x39;
-const KEY_PAGEUP: u16 = 104;
-const KEY_PAGEDOWN: u16 = 109;
+const KEY_PAGEUP: u16 = profile::ACTIVE.page_back_key;
+const KEY_PAGEDOWN: u16 = profile::ACTIVE.page_forward_key;
 
 /// The turn the framebuffer is drawn in, from FBInk's state (`fbink -e` prints `currentRota=N`): 0 upright,
 /// 2 upside down. The screen's own direction, so the controls follow what the reader sees, not the
@@ -323,8 +325,20 @@ fn read_event(file: &mut File) -> Option<InputEvent> {
 /// Drawing to the panel. Regions are cropped to the rows that changed, and the
 /// waveform follows the kind of change (fast for chrome, text quality for pages).
 struct Display {
-    text_frames: u32,
     last_progress: Instant,
+    /// When the last update was sent to the panel.
+    last_draw: Instant,
+    /// Draw in-process (true) or always with fbink (false); from the tuning file.
+    direct: bool,
+    /// The e-ink waveforms chosen in the browser's Display sheet.
+    page_wave: String,
+    ui_wave: String,
+    /// Software dithering for page turns, from the Display sheet.
+    page_dither: bool,
+    /// Near-black and near-white page pixels drawn pure, from the Display sheet.
+    solid_text: bool,
+    /// The framebuffer for in-process drawing; `None` when it cannot be opened (fbink is used).
+    panel: Option<eink::Panel>,
 }
 
 impl Display {
@@ -333,24 +347,52 @@ impl Display {
         if y1 <= y0 {
             return;
         }
-        let mut flash = u.wave == Wave::Flash;
-        if u.wave == Wave::Text {
-            self.text_frames += 1;
-            // Periodic full flash clears ghosting left by partial updates.
-            if self.text_frames % FLASH_EVERY == 0 {
-                flash = true;
-            }
-        }
+        let t0 = Instant::now();
+        let flash = u.wave == Wave::Flash;
+        // A full flash is always GC16. Otherwise the reader's own choice: page content and bars/taps.
         let wave = if flash {
             "GC16"
         } else {
             match u.wave {
-                Wave::Fast => "DU",
-                _ => "GL16",
+                Wave::Fast => self.ui_wave.as_str(),
+                _ => self.page_wave.as_str(),
             }
         };
-        let region = u.region();
-        blit_region(u.width, y0, y1 - y0, &region, wave, flash);
+        let mut region = u.region();
+        // Dithering is for page content only: bars, progress and flashes keep their own rendering.
+        let dither = self.page_dither && !flash && u.wave == Wave::Text;
+        // Page content is cut to the panel's 16 gray steps before it is sent. Each extra gray level is one more
+        // transition for the driver to count, and too many of them trigger its flash pass. KB_QUANTIZE=0 turns it off.
+        if u.wave == Wave::Text && dither {
+            dither16(&mut region, u.width, y0);
+        } else if u.wave == Wave::Text && quantize_pages() {
+            quantize16(&mut region);
+        }
+        // Letters in a site's dark gray (or its Night inverse) flash on every turn: the panel reaches a gray by
+        // swinging through the opposite extreme. Pure black and white letters change directly, as in the stock reader.
+        if u.wave == Wave::Text && self.solid_text {
+            solidify(&mut region);
+        }
+        let wave = wave.to_string();
+        let path = self.blit(u.width, y0, y1 - y0, &region, &wave, flash);
+        self.last_draw = Instant::now();
+        log(&format!("eink {wave} rows ({y0}, {y1}) {path} in {:?}", t0.elapsed()));
+    }
+
+    /// Draw in-process when possible, else with fbink: the screen is turned, or the driver refused the update.
+    /// Returns which path drew.
+    fn blit(&mut self, width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) -> &'static str {
+        if self.direct {
+            if let (Some(panel), Some(code)) = (self.panel.as_mut(), eink::wave_code(wave)) {
+                match panel.draw(width, y, rows, gray, code, flash) {
+                    Ok(true) => return "direct",
+                    Ok(false) => {}
+                    Err(e) => log(&format!("panel: {e}; using fbink")),
+                }
+            }
+        }
+        blit_region(width, y, rows, gray, wave, flash);
+        "fbink"
     }
 
     /// Progress strip under the address bar. Cheap, and at most ten times a second.
@@ -367,18 +409,138 @@ impl Display {
                 strip[row * w as usize + x] = 0;
             }
         }
-        blit_region(w, TOP_H - PROGRESS_H, PROGRESS_H, &strip, "DU", false);
+        self.blit(w, TOP_H - PROGRESS_H, PROGRESS_H, &strip, "DU", false);
     }
 }
 
+/// Settings for measuring on the device, read from `tuning.txt` in the browser folder before each event, so
+/// they can be changed while the browser runs. Lines are `key=value`; a missing file or key keeps the default.
+///
+/// - `prefetch_delay_ms` (450): how long after a panel update the next screens may be rendered.
+/// - `direct` (1): draw in-process; 0 draws every update with fbink.
+struct Tuning {
+    prefetch_delay: Duration,
+    direct: bool,
+    /// The file's modification time when it was last read.
+    seen: Option<std::time::SystemTime>,
+}
+
+impl Default for Tuning {
+    fn default() -> Self {
+        Tuning { prefetch_delay: Duration::from_millis(450), direct: true, seen: None }
+    }
+}
+
+impl Tuning {
+    fn reload(&mut self) {
+        let path = format!("{DIR}/tuning.txt");
+        let modified = fs::metadata(&path).and_then(|m| m.modified()).ok();
+        if modified == self.seen {
+            return;
+        }
+        self.seen = modified;
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        *self = Tuning { seen: modified, ..Tuning::parse(&text) };
+        log(&format!("tuning: prefetch_delay {:?}, direct {}", self.prefetch_delay, self.direct));
+    }
+
+    fn parse(text: &str) -> Tuning {
+        let mut t = Tuning::default();
+        for line in text.lines() {
+            let Some((key, value)) = line.split_once('=') else { continue };
+            match (key.trim(), value.trim()) {
+                ("prefetch_delay_ms", v) => {
+                    if let Ok(ms) = v.parse::<u64>() {
+                        t.prefetch_delay = Duration::from_millis(ms);
+                    }
+                }
+                ("direct", v) => t.direct = v != "0",
+                _ => {}
+            }
+        }
+        t
+    }
+}
+
+/// The framebuffer for in-process drawing, or `None` (logged) when it cannot be used.
+fn open_panel() -> Option<eink::Panel> {
+    match eink::Panel::open() {
+        Ok(p) => {
+            log("panel: drawing in-process");
+            Some(p)
+        }
+        Err(e) => {
+            log(&format!("panel: {e}; using fbink"));
+            None
+        }
+    }
+}
+
+/// Whether page content is cut to 16 gray steps before it is sent (on unless KB_QUANTIZE=0).
+fn quantize_pages() -> bool {
+    std::env::var("KB_QUANTIZE").map_or(true, |v| v != "0")
+}
+
+/// Round each gray to the nearest of the 16 panel steps (0, 17, 34, ... 255).
+fn quantize16(gray: &mut [u8]) {
+    for px in gray.iter_mut() {
+        *px = ((*px as u32 + 8) / 17 * 17).min(255) as u8;
+    }
+}
+
+/// The 8x8 ordered-dither thresholds (0..63), the Bayer matrix.
+const BAYER8: [[u8; 8]; 8] = [
+    [0, 32, 8, 40, 2, 34, 10, 42],
+    [48, 16, 56, 24, 50, 18, 58, 26],
+    [12, 44, 4, 36, 14, 46, 6, 38],
+    [60, 28, 52, 20, 62, 30, 54, 22],
+    [3, 35, 11, 43, 1, 33, 9, 41],
+    [51, 19, 59, 27, 49, 17, 57, 25],
+    [15, 47, 7, 39, 13, 45, 5, 37],
+    [63, 31, 55, 23, 61, 29, 53, 21],
+];
+
+/// Ordered dither to the panel's 16 gray steps (multiples of 17), in place. Each pixel lies between two steps;
+/// the Bayer pattern decides which one it takes, so the average gray is kept in every area. The pattern is
+/// tied to the screen position, so the same gray gives the same dots on every turn. Done in the browser, not
+/// by FBInk: the FBInk build on the Kindle cannot dither images.
+fn dither16(gray: &mut [u8], width: u32, y0: u32) {
+    let w = width as usize;
+    for (i, px) in gray.iter_mut().enumerate() {
+        let x = i % w;
+        let y = y0 as usize + i / w;
+        let base = (*px as u32) / 17;
+        let frac = (*px as u32) % 17;
+        // Round up when the fraction is above the pixel's threshold: frac/17 > (t + 0.5) / 64.
+        let t = BAYER8[y % 8][x % 8] as u32;
+        let up = frac * 128 > 17 * (2 * t + 1);
+        *px = ((base + u32::from(up)) * 17).min(255) as u8;
+    }
+}
+
+/// Draw the two panel steps next to black as black and the two next to white as white (0, 17, 34 -> 0 and
+/// 221, 238, 255 -> 255). Text set in #111 or #222 then has pure letter bodies; the anti-aliased edges keep
+/// their grays.
+fn solidify(gray: &mut [u8]) {
+    for px in gray.iter_mut() {
+        if *px <= 34 {
+            *px = 0;
+        } else if *px >= 221 {
+            *px = 255;
+        }
+    }
+}
+
+/// The frame file fbink reads. It lives in RAM (/var is tmpfs), so a page turn does not write to the
+/// storage partition. An 8-bit grayscale BMP needs no compression, which makes it much faster to produce
+/// than a PNG; fbink reads it directly.
+const FRAME_FILE: &str = "/var/tmp/kb-frame.bmp";
+
 /// Show `rows` rows of gray pixels at row `y` with the given fbink waveform.
 fn blit_region(width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) {
-    let png = match encode_png(width, rows, gray) {
-        Ok(p) => p,
-        Err(e) => return log(&format!("png: {e}")),
-    };
-    let path = format!("{DIR}/frame.png");
-    if let Err(e) = fs::write(&path, png) {
+    let bmp = gray_bmp(width, rows, gray);
+    let path = FRAME_FILE;
+    if let Err(e) = fs::write(path, bmp) {
         return log(&format!("write frame: {e}"));
     }
     let mut cmd = Command::new(FBINK);
@@ -392,6 +554,43 @@ fn blit_region(width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bo
         Ok(s) => log(&format!("fbink exit {s}")),
         Err(e) => log(&format!("fbink: {e}")),
     }
+}
+
+/// An 8-bit grayscale BMP of `width` x `rows` pixels. `gray` holds the rows top to bottom, one byte per pixel.
+/// The rows are stored bottom-up, as BMP files usually are, with each row padded to four bytes.
+fn gray_bmp(width: u32, rows: u32, gray: &[u8]) -> Vec<u8> {
+    let stride = (width as usize + 3) & !3;
+    let pixels = stride * rows as usize;
+    let palette = 256 * 4;
+    let offset = 14 + 40 + palette;
+    let size = offset + pixels;
+    let mut out = Vec::with_capacity(size);
+    // File header.
+    out.extend_from_slice(b"BM");
+    out.extend_from_slice(&(size as u32).to_le_bytes());
+    out.extend_from_slice(&[0, 0, 0, 0]);
+    out.extend_from_slice(&(offset as u32).to_le_bytes());
+    // Info header (BITMAPINFOHEADER).
+    out.extend_from_slice(&40u32.to_le_bytes());
+    out.extend_from_slice(&(width as i32).to_le_bytes());
+    out.extend_from_slice(&(rows as i32).to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes());
+    out.extend_from_slice(&8u16.to_le_bytes());
+    out.extend_from_slice(&[0; 24]); // no compression, sizes and resolution left at zero
+    // Grey palette.
+    for v in 0..=255u8 {
+        out.extend_from_slice(&[v, v, v, 0]);
+    }
+    // Pixels, bottom row first.
+    let row_len = width as usize;
+    let padding = [0u8; 3];
+    for row in (0..rows as usize).rev() {
+        let start = row * row_len;
+        let line = gray.get(start..start + row_len).unwrap_or(&[]);
+        out.extend_from_slice(line);
+        out.extend_from_slice(&padding[..stride - line.len()]);
+    }
+    out
 }
 
 /// State shared by the input loop and the browser's progress pump.
@@ -414,7 +613,54 @@ fn rss_kb() -> u64 {
         .unwrap_or(0)
 }
 
+/// Writes a fatal signal's number and fault address to stderr (the browser log) before the process ends.
+/// Only `write(2)` is used here, which is safe inside a signal handler.
+extern "C" fn on_fatal(sig: libc::c_int, info: *mut libc::siginfo_t, _ctx: *mut libc::c_void) {
+    fn put(bytes: &[u8]) {
+        unsafe { libc::write(2, bytes.as_ptr() as *const libc::c_void, bytes.len()) };
+    }
+    fn hex(mut value: usize, out: &mut [u8; 18]) -> &[u8] {
+        let digits = b"0123456789abcdef";
+        let mut at = out.len();
+        loop {
+            at -= 1;
+            out[at] = digits[value & 15];
+            value >>= 4;
+            if value == 0 {
+                break;
+            }
+        }
+        out[at - 2] = b'0';
+        out[at - 1] = b'x';
+        &out[at - 2..]
+    }
+    let addr = if info.is_null() { 0 } else { unsafe { (*info).si_addr() as usize } };
+    let mut buf = [0u8; 18];
+    put(b"\n[crash] fatal signal ");
+    put(&[b'0' + (sig as u8 / 10), b'0' + (sig as u8 % 10)]);
+    put(b" at address ");
+    put(hex(addr, &mut buf));
+    put(b"\n");
+    // Restore the default action and raise it again, so the process ends as it would have.
+    unsafe {
+        libc::signal(sig, libc::SIG_DFL);
+        libc::raise(sig);
+    }
+}
+
+fn install_crash_log() {
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = on_fatal as *const () as usize;
+        action.sa_flags = libc::SA_SIGINFO;
+        libc::sigemptyset(&mut action.sa_mask);
+        libc::sigaction(libc::SIGBUS, &action, std::ptr::null_mut());
+        libc::sigaction(libc::SIGSEGV, &action, std::ptr::null_mut());
+    }
+}
+
 fn main() {
+    install_crash_log();
     log("start");
     let start = fs::read_to_string(format!("{DIR}/start.txt"))
         .ok()
@@ -423,7 +669,7 @@ fn main() {
         .unwrap_or_else(|| "kbp://home".into());
 
     let (tx, rx) = channel();
-    if let Some(path) = find_input("cyttsp") {
+    if let Some(path) = find_input(profile::ACTIVE.touch_name) {
         let t = tx.clone();
         thread::spawn(move || touch_loop(path, t));
     } else {
@@ -439,7 +685,7 @@ fn main() {
     let shared = Rc::new(RefCell::new(Shared {
         rx,
         pending: VecDeque::new(),
-        display: Display { text_frames: 0, last_progress: Instant::now() - Duration::from_secs(1) },
+        display: Display { last_progress: Instant::now() - Duration::from_secs(1), last_draw: Instant::now(), direct: true, page_wave: "GC16".into(), ui_wave: "DU".into(), page_dither: false, solid_text: true, panel: open_panel() },
     }));
 
     // While a page loads, the progress strip is drawn and any tap cancels the wait,
@@ -481,18 +727,50 @@ fn main() {
     shared.borrow_mut().display.show(&u);
     log(&format!("ready in {:?}: {}", t0.elapsed(), b.url()));
 
+    // How long to wait for input before an idle tick. Just after an event it is short, so the next screen is
+    // prefetched soon after the panel has drawn this one rather than when the reader may already be pressing
+    // the button again.
+    const IDLE: Duration = Duration::from_millis(400);
+    const SOON: Duration = Duration::from_millis(30);
+    let mut idle = IDLE;
+    let mut tuning = Tuning::default();
     loop {
+        tuning.reload();
+        shared.borrow_mut().display.direct = tuning.direct;
+        // The waveforms the reader chose in its Display sheet (they can change between events).
+        {
+            let (page, ui) = b.wave_names();
+            let mut s = shared.borrow_mut();
+            s.display.page_wave = page;
+            s.display.ui_wave = ui;
+            s.display.page_dither = b.page_dither();
+            s.display.solid_text = b.solid_text();
+        }
         let next = shared.borrow_mut().pending.pop_front();
         let ev = match next {
             Some(ev) => ev,
             None => {
-                let received = shared.borrow().rx.recv_timeout(Duration::from_millis(400));
+                let received = shared.borrow().rx.recv_timeout(idle);
                 match received {
                     Ok(ev) => ev,
                     Err(RecvTimeoutError::Timeout) => {
-                        // Idle: bring in finished images and clear notices whose time is up.
+                        // No rendering while the panel is still drawing the last update: the prefetch keeps the
+                        // processor and memory busy for 300-650 ms, which is longer than a page turn on the panel.
+                        let since = shared.borrow().display.last_draw.elapsed();
+                        if since < tuning.prefetch_delay {
+                            idle = tuning.prefetch_delay - since;
+                            continue;
+                        }
+                        // Idle: prefetch the next screens, bring in finished images, clear notices whose time is up.
+                        let t_tick = Instant::now();
                         if let Some(u) = b.tick() {
                             shared.borrow_mut().display.show(&u);
+                        }
+                        if t_tick.elapsed() > Duration::from_millis(50) {
+                            // It did work (a prefetch); check again soon for the other neighbour.
+                            idle = SOON;
+                        } else {
+                            idle = IDLE;
                         }
                         continue;
                     }
@@ -501,6 +779,7 @@ fn main() {
             }
         };
         let t_action = Instant::now();
+        idle = SOON;
         log(&format!("event {ev:?}"));
         // Tap feedback first: the element turns black before the action runs.
         if let Ev::Tap(x, y) | Ev::LongTap(x, y) = ev {
@@ -540,10 +819,82 @@ fn main() {
             log("exit requested");
             // A plain clear, no flash: the framework draws the library right after, which saves the flash time.
             let _ = Command::new(FBINK).args(["-c"]).status();
-            break;
+            // Leave without dropping the browser. On the Oasis 3 the drop crashed with SIGBUS ("[crash] fatal
+            // signal 07" in the log); the launcher then restarted the browser, so Exit took two taps. Everything
+            // that matters was saved by kb:exit, and the kernel closes the open descriptors on exit.
+            log("bye");
+            std::process::exit(0);
         }
     }
+    // Shutdown in steps, so a crash in the last one shows which step it was.
+    log("closing: dropping the browser");
+    drop(b);
+    log("closing: browser dropped");
+    drop(shared);
     log("bye");
+}
+
+#[cfg(test)]
+mod quantize_tests {
+    use super::*;
+
+    #[test]
+    fn quantize_rounds_to_the_sixteen_steps() {
+        let mut px = vec![0u8, 8, 9, 16, 17, 100, 128, 254, 255];
+        quantize16(&mut px);
+        assert_eq!(px, vec![0, 0, 17, 17, 17, 102, 136, 255, 255]);
+    }
+
+    #[test]
+    fn tuning_reads_keys_and_keeps_defaults() {
+        let t = Tuning::parse("prefetch_delay_ms=0\ndirect=0\n");
+        assert_eq!(t.prefetch_delay, Duration::ZERO);
+        assert!(!t.direct);
+        let d = Tuning::parse("junk\nprefetch_delay_ms=abc\n");
+        assert_eq!(d.prefetch_delay, Duration::from_millis(450));
+        assert!(d.direct);
+    }
+
+    #[test]
+    fn dither_keeps_the_average_gray_and_uses_panel_steps() {
+        // A flat 8 (between 0 and 17) over a whole 8x8 cell: about 8 on average, only 0 or 17 per pixel.
+        let mut cell = vec![8u8; 64];
+        dither16(&mut cell, 8, 0);
+        assert!(cell.iter().all(|&p| p == 0 || p == 17));
+        let mean = cell.iter().map(|&p| p as u32).sum::<u32>() as f64 / 64.0;
+        assert!((mean - 8.0).abs() < 1.0, "mean {mean}");
+        // A step exactly on a panel level stays put.
+        let mut steps = vec![0u8, 17, 34, 255];
+        dither16(&mut steps, 4, 0);
+        assert_eq!(steps, vec![0, 17, 34, 255]);
+    }
+
+    #[test]
+    fn solid_text_makes_near_black_and_near_white_pure() {
+        // #111 text (17) and its Night inverse (238) become pure; mid grays (anti-aliasing) stay.
+        let mut px = vec![0u8, 17, 34, 51, 136, 204, 221, 238, 255];
+        solidify(&mut px);
+        assert_eq!(px, vec![0, 0, 0, 51, 136, 204, 255, 255, 255]);
+    }
+}
+
+#[cfg(test)]
+mod bmp_tests {
+    use super::*;
+
+    #[test]
+    fn gray_bmp_has_the_right_size_and_rows_bottom_up() {
+        // 3 pixels wide: each row is padded to 4 bytes. Row 0 (top) is 1 2 3, row 1 is 4 5 6.
+        let bmp = gray_bmp(3, 2, &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(&bmp[0..2], b"BM");
+        let offset = u32::from_le_bytes(bmp[10..14].try_into().unwrap()) as usize;
+        assert_eq!(offset, 14 + 40 + 1024);
+        assert_eq!(bmp.len(), offset + 8);
+        assert_eq!(u32::from_le_bytes(bmp[2..6].try_into().unwrap()) as usize, bmp.len());
+        assert_eq!(&bmp[offset..offset + 4], &[4, 5, 6, 0]);
+        assert_eq!(&bmp[offset + 4..offset + 8], &[1, 2, 3, 0]);
+        assert_eq!(u16::from_le_bytes(bmp[28..30].try_into().unwrap()), 8);
+    }
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 # 3. Test and validation pipeline
 
-Released baseline 0.1.0, including the Unreleased navigation milestone. Requirements are in
+Latest release: 0.2.1 (2026-11-17). Requirements are in
 [01-requirements.md](01-requirements.md); the design is in
 [02-architecture.md](02-architecture.md). Each test level below states what it proves, how to
 run it, and what result counts as a pass.
@@ -282,9 +282,9 @@ Commands were run with Homebrew Rust/zig on PATH.
 
 | Check | Result |
 |---|---|
-| `cargo test --workspace --exclude kb-kindle` | PASS, 13 unit tests plus doc-test targets |
+| `cargo test --workspace` | PASS, 64 unit tests (kb-app 33, kb-term 12, kb-net 7, kb-kindle 6, kb-engine 5, kb-js 1) |
 | `cargo build --release --workspace` | PASS; host `rust-objcopy` warns that debug stripping could not load `libLLVM.dylib` |
-| `scripts/desktop-regression.sh` | PASS, 67/67 local scenarios |
+| `scripts/desktop-regression.sh` | PASS, 86/86 local scenarios (2026-11-17) |
 | `scripts/launcher-stub-test.sh` | PASS, ten checks; intentional killed-launcher messages expected |
 | ARMv7 `cargo zigbuild` from §3.4 | PASS; vendored QuickJS emits four unused-variable warnings |
 | `file target/armv7-unknown-linux-musleabihf/release/kb-kindle` | ELF 32-bit ARM EABI5, statically linked, stripped |

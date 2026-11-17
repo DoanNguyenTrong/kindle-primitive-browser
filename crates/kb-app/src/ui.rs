@@ -52,6 +52,7 @@ pub fn icon(name: &str, size: u32) -> String {
         "chev-down" => r#"<path d="M6 9 L12 15 L18 9"/>"#,
         "up" => r#"<path d="M12 19 V6 M6 11 L12 5 L18 11"/>"#,
         "down" => r#"<path d="M12 5 V18 M6 13 L12 19 L18 13"/>"#,
+        "pulse" => r#"<path d="M2 12 H7 L9.5 5 L14 19 L16.5 12 H22"/>"#,
         _ => "",
     };
     format!(
@@ -221,6 +222,16 @@ pub fn sheet_header(title: &str, controls: &str) -> String {
     ), "")
 }
 
+/// The Find control in the menu's title strip: opens the find keyboard.
+pub fn find_button() -> String {
+    r#"<a class="btn" href="kb:find">Find</a>"#.to_string()
+}
+
+/// The Diagnostics control in the menu's title strip, beside Exit.
+pub fn diagnostics_button() -> String {
+    r#"<a class="btn" href="kbp://diagnostics">Diagnostics</a>"#.to_string()
+}
+
 /// The Exit control shown in the menu's title strip.
 pub fn exit_button() -> String {
     // Exit closes the browser and returns to the Kindle library. The open tabs are kept, so the
@@ -230,7 +241,19 @@ pub fn exit_button() -> String {
 
 /// Display sheet: text size steps, page width, and day or night. Changes apply at once and the
 /// sheet stays open, so the reader can compare settings on the page.
-pub fn display(text_pct: u32, width: u32, night: bool) -> String {
+/// The Display sheet. `scripts` is the script setting of the current site (`None` on browser pages).
+pub fn display(
+    text_pct: u32,
+    width: u32,
+    night: bool,
+    scripts: Option<bool>,
+    page_wave: &str,
+    ui_wave: &str,
+    flash_on_load: bool,
+    page_dither: bool,
+    solid_text: bool,
+    book_lines: bool,
+) -> String {
     let seg = |href: &str, label: &str, on: bool| {
         format!(r#"<a class="segbtn{}" href="{href}">{label}</a>"#, if on { " on" } else { "" })
     };
@@ -238,6 +261,42 @@ pub fn display(text_pct: u32, width: u32, night: bool) -> String {
         .iter()
         .map(|&w| seg(&format!("kb:width:{w}"), width_name(w), w == width))
         .collect();
+    let site = match scripts {
+        Some(on) => format!(
+            r#"<div class="section">SCRIPTS ON THIS SITE</div><div class="seg">{on_btn}{off_btn}</div><div class="note">Off shows the page without its scripts; text in &lt;noscript&gt; is shown.</div>"#,
+            on_btn = seg("kb:scripts:on", "On", on),
+            off_btn = seg("kb:scripts:off", "Off", !on),
+        ),
+        None => String::new(),
+    };
+    let page_waves: String = crate::settings::PAGE_WAVES
+        .iter()
+        .map(|w| seg(&format!("kb:wave:page:{w}"), w, *w == page_wave))
+        .collect();
+    let ui_waves: String = crate::settings::UI_WAVES
+        .iter()
+        .map(|w| seg(&format!("kb:wave:ui:{w}"), w, *w == ui_wave))
+        .collect();
+    let refresh = format!(
+        r#"<div class="section">SCREEN REFRESH</div><div class="seg"><a class="segbtn" href="kb:refresh">Refresh screen now</a>{on}{off}</div><div class="note">Page turns use the page waveform. AUTO is what the Kindle's reader sends: partial updates, with the driver choosing the waveform. GC16 is partial with full-quality phases; REAGL is for text; DU is fastest. Changes apply after a page turn or a restart.</div>"#,
+        on = seg("kb:wave:flash:on", "Flash on new page", flash_on_load),
+        off = seg("kb:wave:flash:off", "No flash on new page", !flash_on_load),
+    );
+    let dither = format!(
+        r#"<div class="section">PAGE TURN DITHERING</div><div class="seg">{on}{off}</div><div class="note">Dithering spreads each gray over neighbouring pixels in an ordered 8x8 pattern, so pages are drawn in the panel's own gray steps. Compare On and Off on the same page.</div>"#,
+        on = seg("kb:wave:dither:on", "On", page_dither),
+        off = seg("kb:wave:dither:off", "Off", !page_dither),
+    );
+    let solid = format!(
+        r#"<div class="section">SOLID TEXT</div><div class="seg">{on}{off}</div><div class="note">On draws near-black and near-white as pure black and white. Sites often set text in a dark gray, and gray letters flash on every page turn; pure letters change without the flash.</div>"#,
+        on = seg("kb:wave:solid:on", "On", solid_text),
+        off = seg("kb:wave:solid:off", "Off", !solid_text),
+    );
+    let lines = format!(
+        r#"<div class="section">BOOK LINES</div><div class="seg">{on}{off}</div><div class="note">On spaces paragraphs by one blank line, so the lines of the next page land on the rows of this one and a page turn changes as little of the screen as a book reader's.</div>"#,
+        on = seg("kb:wave:lines:on", "On", book_lines),
+        off = seg("kb:wave:lines:off", "Off", !book_lines),
+    );
     let body = format!(
         r#"<div class="sheet">
 <div class="section">TEXT SIZE</div>
@@ -246,9 +305,16 @@ pub fn display(text_pct: u32, width: u32, night: bool) -> String {
 <div class="seg">{widths}</div>
 <div class="note">Narrow suits phone layouts. Medium fits this screen. Wide shows more text per line.</div>
 <div class="section">THEME</div>
-<div class="seg">{day}{dark}</div></div>"#,
+<div class="seg">{day}{dark}</div>{site}<div class="section">PAGE REFRESH</div><div class="seg">{page_waves}</div><div class="section">BARS AND TAPS REFRESH</div><div class="seg">{ui_waves}</div>{solid}{lines}{refresh}{dither}</div>"#,
         day = seg("kb:nightoff", "Day", !night),
         dark = seg("kb:nighton", "Night", night),
+        site = site,
+        page_waves = page_waves,
+        ui_waves = ui_waves,
+        refresh = refresh,
+        dither = dither,
+        solid = solid,
+        lines = lines,
     );
     let extra = ".stepper{display:flex;align-items:center;gap:20px;margin:0 24px;height:104px}\
 .step{display:flex;align-items:center;justify-content:center;width:160px;height:96px;border:2px solid #111;border-radius:16px;font-size:36px;font-weight:bold;color:#111;text-decoration:none}\
@@ -477,8 +543,8 @@ pub fn keyboard(rows: &[Vec<Key>], area_h: u32) -> String {
 }
 
 /// Keyboard layers from the layout rows (`Layer` decides which set).
-pub fn keyboard_for(layer: Layer, area_h: u32) -> String {
-    keyboard(&crate::keyboard_rows(layer), area_h)
+pub fn keyboard_for(layer: Layer, go: &str, area_h: u32) -> String {
+    keyboard(&crate::keyboard_rows(layer, go), area_h)
 }
 
 /// One row of a list page: link, title and caption, and an optional trailing action.
@@ -664,6 +730,76 @@ pub fn error(title: &str, reason: &str, detail: &str) -> String {
         d = esc(detail),
     );
     document(title, &body, "")
+}
+
+/// One check on the diagnostics page: what it is, the command run, and what it printed.
+pub struct Report {
+    pub title: String,
+    pub command: String,
+    pub output: String,
+}
+
+const DIAG_CSS: &str = ".actions{margin:0 0 30px}.diag{margin:0 0 26px}.diag-title{font-size:26px;margin:0}\
+.diag-cmd{font-size:20px;color:#666;margin:2px 0 6px}\
+.diag-out{font-size:20px;margin:0;padding:6px 0 6px 14px;border-left:3px solid #000;white-space:pre-wrap}.ssh-connect{font-size:38px;font-weight:bold;margin:12px 0 10px;padding:16px;border:3px solid #000;border-radius:14px}";
+
+/// The SSH result, shown as one card: the connect command in large type, then the server's status.
+fn ssh_card(r: &Report) -> String {
+    let connect = r.output.lines().find(|l| l.starts_with("ssh -p ")).unwrap_or("");
+    let status: Vec<&str> = r.output.lines().filter(|l| !l.starts_with("ssh -p ") && !l.trim().is_empty()).collect();
+    format!(
+        r#"<div class="diag"><h2 class="diag-title">SSH server</h2><div class="ssh-connect">{c}</div><div class="diag-cmd">Login: root, with the SSH password.</div><pre class="diag-out">{s}</pre></div>"#,
+        c = esc(connect),
+        s = esc(&status.join("\n")),
+    )
+}
+
+/// A select's options as a sheet: one row per option, the chosen one in bold. A tap picks the row.
+pub fn choice(title: &str, options: &[(String, bool)]) -> String {
+    let rows: String = options
+        .iter()
+        .enumerate()
+        .map(|(i, (label, picked))| {
+            format!(
+                r#"<a class="pick{on}" href="kb:pick:{i}">{l}</a>"#,
+                on = if *picked { " on" } else { "" },
+                l = esc(if label.is_empty() { "(empty)" } else { label }),
+            )
+        })
+        .collect();
+    let body = format!(r#"<div class="sheet"><div class="section">{}</div>{rows}</div>"#, esc(title));
+    document(
+        title,
+        &body,
+        ".pick{display:block;padding:22px 28px;font-size:32px;color:#111;text-decoration:none;border-bottom:1px solid #ddd}.pick.on{font-weight:bold;background:#eee}",
+    )
+}
+
+/// The diagnostics page: the actions, the last DNS change (if any), then one section per check. Before the
+/// first run there are no checks yet, and the page says what the page does.
+pub fn diagnostics(report: Option<&[Report]>, fix: Option<&Report>, ssh_on: bool) -> String {
+    let run_label = if report.is_some() { "Run again" } else { "Run checks" };
+    let intro = if report.is_some() {
+        String::new()
+    } else {
+        r#"<div class="empty">Runs read-only checks on this device: the shell, system, storage, Wi-Fi, DNS, the hosts file, browser files and processes. Set public DNS points this device at 1.1.1.1 and 8.8.8.8, also after Wi-Fi reconnects and restarts (the originals are saved first); Restore DNS puts them back. Start SSH runs an SSH server on port 2222. Set SSH password changes the root password; type it on the keyboard, 6 to 64 letters, digits, or - _ . @ # % + = !.</div>"#.to_string()
+    };
+    let ssh_label = if ssh_on { "Stop SSH" } else { "Start SSH" };
+    let actions = format!(
+        r#"<div class="actions"><a class="btn on" href="kb:diag">{run_label}</a><a class="btn" href="kb:back">Back</a></div><div class="diag-cmd">DNS</div><div class="actions"><a class="btn" href="kb:dns:public">Public DNS</a><a class="btn" href="kb:dns:restore">Restore DNS</a></div><div class="diag-cmd">SSH</div><div class="actions"><a class="btn" href="kb:ssh:toggle">{ssh_label}</a><a class="btn" href="kb:ssh:check">Check SSH</a><a class="btn" href="kb:ssh:password">Set SSH password</a></div>"#
+    );
+    let section = |r: &Report| {
+        format!(
+            r#"<div class="diag"><h2 class="diag-title">{t}</h2><div class="diag-cmd">{c}</div><pre class="diag-out">{o}</pre></div>"#,
+            t = esc(&r.title),
+            c = esc(&r.command),
+            o = esc(&r.output),
+        )
+    };
+    let fix_section = fix.map(|r| if r.title == "Start SSH" { ssh_card(r) } else { section(r) }).unwrap_or_default();
+    let checks: String = report.unwrap_or(&[]).iter().map(section).collect();
+    let body = format!(r#"<div class="page"><h1>Diagnostics</h1>{intro}{actions}{fix_section}{checks}</div>"#);
+    document("Diagnostics", &body, DIAG_CSS)
 }
 
 /// Short notice shown above the bottom toolbar. Placed by the caller.

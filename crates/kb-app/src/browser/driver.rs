@@ -64,7 +64,7 @@ impl Browser {
             let target = (doc_y + h / 2.0 - visible / 2.0).max(0.0) as f64;
             let delta = target - page.scroll_y();
             page.scroll_by(delta);
-            self.page_dirty = true;
+            self.mark_page_dirty();
             self.touch(0, self.height, Wave::Text);
         }
     }

@@ -297,9 +297,18 @@
     timers.push(t);
     return t.id;
   };
-  // setInterval runs once: pages are rendered on demand, not animated.
-  globalThis.setInterval = globalThis.setTimeout;
+  // setInterval: pages are rendered on demand, not animated, so an interval does not keep a timer running.
+  // It fires INTERVAL_RUNS times while the page settles (a page that polls for something sees several
+  // ticks), and clearInterval stops it. The bound keeps a page from holding the device busy.
+  const INTERVAL_RUNS = 3;
+  const cancelled = new Set();
+  globalThis.setInterval = (fn, ms, ...args) => {
+    const t = { id: ++seq, fn, args, due: Number(ms) || 0, every: Math.max(Number(ms) || 0, 1), runs: INTERVAL_RUNS };
+    timers.push(t);
+    return t.id;
+  };
   globalThis.clearTimeout = (id) => {
+    cancelled.add(id);
     const i = timers.findIndex((t) => t.id === id);
     if (i >= 0) timers.splice(i, 1);
   };
@@ -338,12 +347,24 @@
   });
 
   // ---- storage, console, window -------------------------------------------
-  const store = new Map();
+  // localStorage is kept per site in the device's data folder, so it survives a restart.
+  const storageOrigin = (() => { const m = /^(https?:\/\/[^/?#]*)/.exec(globalThis.__kbUrl || ''); return m ? m[1] : 'internal'; })();
+  let saved = {};
+  try { saved = JSON.parse(N.storageLoad(storageOrigin) || '{}'); } catch (e) { saved = {}; }
+  const store = new Map(Object.entries(saved));
+  const saveStore = () => {
+    if (!N.storageSave(storageOrigin, JSON.stringify(Object.fromEntries(store)))) {
+      store.clear();
+      throw new Error('QuotaExceededError: localStorage is full');
+    }
+  };
   globalThis.localStorage = {
     getItem: (k) => (store.has(String(k)) ? store.get(String(k)) : null),
-    setItem: (k, v) => store.set(String(k), String(v)),
-    removeItem: (k) => store.delete(String(k)),
-    clear: () => store.clear(),
+    setItem: (k, v) => { store.set(String(k), String(v)); saveStore(); },
+    removeItem: (k) => { store.delete(String(k)); saveStore(); },
+    clear: () => { store.clear(); saveStore(); },
+    key: (i) => Array.from(store.keys())[i] ?? null,
+    get length() { return store.size; },
   };
   const log = (...a) => N.log(a.map(String).join(' '));
   // An Error prints with its first stack frames, so a logged failure shows where it happened.
@@ -423,6 +444,16 @@
     globalThis[k] = winEvents[k].bind(winEvents);
     document[k] = winEvents[k].bind(winEvents);
   }
+  // Going back or forward to an entry that pushState created on this page: the page hears popstate with the
+  // state it pushed, and the document is not loaded again.
+  globalThis.__kbPopState = (json) => {
+    let state = null;
+    try { state = JSON.parse(json); } catch (e) { state = null; }
+    globalThis.history.state = state;
+    const ev = new Event('popstate');
+    ev.state = state;
+    winEvents.dispatchEvent(ev);
+  };
   globalThis.__fireLoadEvents = () => {
     const ev = (t) => { const e = new Event(t); e.target = document; winEvents.dispatchEvent(e); };
     ev('DOMContentLoaded');
@@ -573,9 +604,113 @@
   }
   globalThis.IntersectionObserver = IntersectionObserverLite;
 
-  // Observers: they never fire, so pages fall back to their static content.
+  // XMLHttpRequest as a thin wrapper over fetch: the request is sent by send(), and readystatechange, load,
+  // error and loadend fire in the order browsers use.
+  class XMLHttpRequestLite {
+    constructor() {
+      this.readyState = 0; this.status = 0; this.statusText = ''; this.responseText = ''; this.response = '';
+      this.responseURL = ''; this.responseType = ''; this.onreadystatechange = null; this.onload = null;
+      this.onerror = null; this.onloadend = null;
+      this._headers = {}; this._listeners = {}; this._respHeaders = null; this._aborted = false;
+    }
+    open(method, url) { this._method = String(method || 'GET'); this._url = String(url); this._aborted = false; this._setState(1); }
+    setRequestHeader(name, value) { this._headers[String(name)] = String(value); }
+    getResponseHeader(name) { return this._respHeaders ? (this._respHeaders[String(name).toLowerCase()] ?? null) : null; }
+    getAllResponseHeaders() { return ''; }
+    addEventListener(type, fn) { (this._listeners[type] = this._listeners[type] || []).push(fn); }
+    removeEventListener(type, fn) { this._listeners[type] = (this._listeners[type] || []).filter((f) => f !== fn); }
+    abort() { this._aborted = true; this.status = 0; this._setState(this.readyState === 0 ? 0 : 4); }
+    _emit(type) {
+      const ev = { type, target: this };
+      const handler = this['on' + type];
+      if (typeof handler === 'function') handler.call(this, ev);
+      for (const fn of this._listeners[type] || []) fn.call(this, ev);
+    }
+    _setState(state) { this.readyState = state; this._emit('readystatechange'); }
+    send(body) {
+      if (this.readyState !== 1) throw new Error('InvalidStateError: open() must be called first');
+      const init = { method: this._method, headers: this._headers };
+      if (body !== undefined && body !== null) init.body = body;
+      fetch(this._url, init).then((res) => res.text().then((text) => {
+        if (this._aborted) return;
+        this.status = res.status; this.statusText = res.statusText || ''; this.responseURL = res.url;
+        this.responseText = text; this.response = text;
+        this._respHeaders = { 'content-type': res.headers.get('content-type') || '' };
+        this._setState(2); this._setState(3); this._setState(4);
+        this._emit('load'); this._emit('loadend');
+      }), () => {
+        if (this._aborted) return;
+        this.status = 0; this._setState(4); this._emit('error'); this._emit('loadend');
+      });
+    }
+  }
+  XMLHttpRequestLite.UNSENT = 0; XMLHttpRequestLite.OPENED = 1; XMLHttpRequestLite.HEADERS_RECEIVED = 2;
+  XMLHttpRequestLite.LOADING = 3; XMLHttpRequestLite.DONE = 4;
+  globalThis.XMLHttpRequest = XMLHttpRequestLite;
+
+  // MutationObserver (basic): attribute and child-list changes made through Element.prototype methods are
+  // recorded, and each observer's callback runs once with its records, in a microtask. Text and innerHTML
+  // writes are not recorded.
+  const observers = [];
+  let deliveryQueued = false;
+  const isWithin = (node, root) => { for (let n = node; n; n = n.parentNode) if (n === root) return true; return false; };
+  const deliver = () => {
+    deliveryQueued = false;
+    for (const o of observers.slice()) {
+      if (!o._records.length) continue;
+      const records = o._records;
+      o._records = [];
+      try { o._cb.call(o, records, o); } catch (e) { N.log('error: MutationObserver callback: ' + e); }
+    }
+  };
+  const recordMutation = (rec) => {
+    for (const o of observers) {
+      const hit = o._targets.find((t) => {
+        if (rec.type === 'attributes' && !t.attributes) return false;
+        if (rec.type === 'childList' && !t.childList) return false;
+        if (rec.type === 'attributes' && t.attributeFilter && !t.attributeFilter.includes(rec.attributeName)) return false;
+        return t.target === rec.target || (t.subtree && isWithin(rec.target, t.target));
+      });
+      if (!hit) continue;
+      o._records.push(rec);
+      if (!deliveryQueued) { deliveryQueued = true; Promise.resolve().then(deliver); }
+    }
+  };
+  const elementProto = Element.prototype;
+  const setAttributeNative = elementProto.setAttribute;
+  elementProto.setAttribute = function (name, value) {
+    const oldValue = this.getAttribute(name);
+    setAttributeNative.call(this, name, value);
+    recordMutation({ type: 'attributes', target: this, attributeName: String(name), oldValue });
+  };
+  const appendChildNative = elementProto.appendChild;
+  elementProto.appendChild = function (child) {
+    const result = appendChildNative.call(this, child);
+    recordMutation({ type: 'childList', target: this, addedNodes: [child], removedNodes: [] });
+    return result;
+  };
+  const removeChildNative = elementProto.removeChild;
+  elementProto.removeChild = function (child) {
+    const result = removeChildNative.call(this, child);
+    recordMutation({ type: 'childList', target: this, addedNodes: [], removedNodes: [child] });
+    return result;
+  };
+  class MutationObserverLite {
+    constructor(callback) { this._cb = callback; this._targets = []; this._records = []; }
+    observe(target, options) {
+      const o = options || {};
+      const attributes = !!o.attributes || o.attributeFilter !== undefined;
+      this._targets = this._targets.filter((t) => t.target !== target);
+      this._targets.push({ target, subtree: !!o.subtree, childList: !!o.childList, attributes, attributeFilter: o.attributeFilter });
+      if (!observers.includes(this)) observers.push(this);
+    }
+    disconnect() { this._targets = []; this._records = []; const i = observers.indexOf(this); if (i >= 0) observers.splice(i, 1); }
+    takeRecords() { const r = this._records; this._records = []; return r; }
+  }
+  globalThis.MutationObserver = MutationObserverLite;
+
+  // Observers that never fire: pages fall back to their static content.
   class NoopObserver { constructor(cb) { this.cb = cb; } observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
-  globalThis.MutationObserver = NoopObserver;
   globalThis.ResizeObserver = NoopObserver;
   globalThis.PerformanceObserver = NoopObserver;
 
@@ -636,19 +771,67 @@
   globalThis.innerHeight = globalThis.__kbCssHeight || 800;
   globalThis.outerWidth = cssWidth;
   globalThis.devicePixelRatio = globalThis.__kbDevicePixelRatio || 1;
-  globalThis.matchMedia = (q) => {
-    const test = (re, ok) => { const m = re.exec(q); return m ? ok(Number(m[1])) : null; };
-    const results = [
-      test(/min-width:\s*(\d+)/, (n) => cssWidth >= n),
-      test(/max-width:\s*(\d+)/, (n) => cssWidth <= n),
-    ].filter((r) => r !== null);
-    return { matches: results.length ? results.every(Boolean) : false, media: q, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} };
+  // Media queries: comma-separated lists (any part may match), "and" between features, "not" and "only",
+  // and the features a Kindle page can answer: size, orientation, colour scheme, and pointer/hover.
+  const mediaPx = (v) => (/(em|rem)$/.test(v) ? parseFloat(v) * 16 : parseFloat(v));
+  const mediaFeature = (f) => {
+    const m = /^\s*([a-z-]+)\s*(?::\s*(.+?))?\s*$/.exec(f);
+    if (!m) return false;
+    const name = m[1];
+    const value = m[2] === undefined ? undefined : m[2].toLowerCase();
+    const h = globalThis.innerHeight;
+    switch (name) {
+      case 'min-width': return cssWidth >= mediaPx(value);
+      case 'max-width': return cssWidth <= mediaPx(value);
+      case 'width': return cssWidth === mediaPx(value);
+      case 'min-height': return h >= mediaPx(value);
+      case 'max-height': return h <= mediaPx(value);
+      case 'height': return h === mediaPx(value);
+      case 'orientation': return value === (cssWidth >= h ? 'landscape' : 'portrait');
+      case 'prefers-color-scheme': return value === 'light';
+      case 'prefers-reduced-motion': return value === 'reduce' ? false : true;
+      case 'hover': case 'any-hover': return value === 'none';
+      case 'pointer': case 'any-pointer': return value === 'none';
+      case 'display-mode': return value === 'browser';
+      default: return false;
+    }
   };
+  const mediaMatches = (q) => q.split(',').some((part) => {
+    let s = part.trim().toLowerCase();
+    let negate = false;
+    if (s.startsWith('not ')) { negate = true; s = s.slice(4).trim(); }
+    if (s.startsWith('only ')) s = s.slice(5).trim();
+    let ok = true;
+    for (const t of s.split(/\s+and\s+/)) {
+      const token = t.trim();
+      if (!token || token === 'all' || token === 'screen') continue;
+      if (token.startsWith('(') && token.endsWith(')')) { if (!mediaFeature(token.slice(1, -1))) { ok = false; break; } continue; }
+      ok = false;
+      break;
+    }
+    return negate ? !ok : ok;
+  });
+  globalThis.matchMedia = (q) => ({ matches: mediaMatches(String(q)), media: String(q), onchange: null, addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {} });
   globalThis.getComputedStyle = (el) => new Proxy({}, { get: (_t, k) => (typeof k === 'string' ? '' : undefined) });
   globalThis.Image = class { constructor(w, h) { this.width = w || 0; this.height = h || 0; this.src = ''; this.onload = null; } };
 
   // History (single document: navigation stays in the browser).
-  globalThis.history = { length: 1, state: null, pushState(st) { this.state = st; }, replaceState(st) { this.state = st; }, back() {}, forward() {}, go() {} };
+  // pushState and replaceState change the address shown (not the page): the browser takes the new address after the script.
+  const applyHistoryUrl = (url, replace, state) => {
+    if (url === undefined || url === null) return;
+    const abs = resolveUrl(String(url));
+    let json = 'null';
+    try { json = JSON.stringify(state === undefined ? null : state) || 'null'; } catch (e) { json = 'null'; }
+    N.setUrl(abs, replace, json);
+    copyLocation(new URLLite(abs));
+  };
+  globalThis.history = {
+    length: 1,
+    state: null,
+    pushState(st, title, url) { this.state = st; applyHistoryUrl(url, false, st); },
+    replaceState(st, title, url) { this.state = st; applyHistoryUrl(url, true, st); },
+    back() {}, forward() {}, go() {},
+  };
 
   // Cookies: read/write through the browser's jar on the next request (approximate).
   let cookieStore = '';
@@ -665,6 +848,8 @@
     setLocation: (url) => copyLocation(new URLLite(url)),
     setCurrentScript: (id) => { document.currentScript = id < 0 ? null : wrap(id); },
     click: (id) => dispatch(id, 'click'),
+    event: (id, type) => dispatch(id, String(type)),
+    popState: (json) => globalThis.__kbPopState(String(json)),
     runTimers: () => {
       let n = 0;
       while (timers.length && n < 500) {
@@ -672,6 +857,11 @@
         const t = timers.shift();
         n++;
         try { t.fn(...t.args); } catch (e) { console.error(e && e.stack ? String(e.stack).split('\n').slice(0, 3).join(' | ') : String(e)); }
+        // An interval that has runs left and was not cleared is scheduled again, one period later.
+        if (t.runs !== undefined && --t.runs > 0 && !cancelled.has(t.id)) {
+          t.due += t.every;
+          timers.push(t);
+        }
       }
       return n;
     },

@@ -7,7 +7,7 @@ device.
 ## One version, in one place
 
 The version is the workspace version in `Cargo.toml`. Every crate inherits it, the menu title shows
-it (`Menu v0.1.17`), and the release package is named after it. Nothing else holds a version number.
+it (`Menu v0.2.1`), and the release package is named after it. Nothing else holds a version number.
 The changelog and the README quote it; update those when you release.
 
 ## Two kinds of build
@@ -47,7 +47,7 @@ Tags are never moved or reused. If a release is wrong, publish a new patch versi
 
 ## Current state
 
-- Workspace version: **0.1.18**, released as tag `v0.1.18`. Earlier release tags: `v0.1.17`.
+- Workspace version: **0.2.6**, released as tag `v0.2.6` (2026-11-17). Earlier release tags: `v0.2.1`, `v0.1.18`, `v0.1.17`.
 - Earlier versions (0.1.0 to 0.1.16) were development device builds, so they have no tags.
 
 ## Naming

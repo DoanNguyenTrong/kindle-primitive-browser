@@ -18,6 +18,15 @@ use url::Url;
 pub use kb_js::Click as ClickKind;
 
 /// What a submitted form turns into.
+/// A line of text on the page (`Page::text_lines`), in device pixels from the top of the document.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextLine {
+    /// Top and bottom of the glyph box (typographic ascent and descent; tall marks may reach a little past).
+    pub top: f64,
+    pub baseline: f64,
+    pub bottom: f64,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Submit {
     /// A GET request: navigate to this URL.
@@ -26,14 +35,76 @@ pub enum Submit {
     Post { url: String, fields: Vec<(String, String)> },
 }
 
+/// A text field the browser can edit: its node key, its current value, and whether it hides its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub key: u64,
+    pub value: String,
+    pub password: bool,
+}
+
+/// A `<select>` the reader can choose from: its key, a title, and its options as (label, selected).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SelectField {
+    pub key: u64,
+    pub title: String,
+    pub options: Vec<(String, bool)>,
+}
+
+/// The `<option>` elements of a select, in order (inside an `<optgroup>` too).
+fn options_of(doc: &blitz_dom::BaseDocument, select: NodeId) -> Vec<NodeId> {
+    let mut found = Vec::new();
+    let Some(node) = doc.get_node(select) else { return found };
+    for child in node.children.iter().copied() {
+        let Some(c) = doc.get_node(child) else { continue };
+        let Some(el) = c.element_data() else { continue };
+        match &*el.name.local {
+            "option" => found.push(child),
+            "optgroup" => {
+                for grand in c.children.iter().copied() {
+                    if doc.get_node(grand).and_then(|g| g.element_data()).map_or(false, |e| &*e.name.local == "option") {
+                        found.push(grand);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// A local attribute name, for attributes the engine reads or writes itself.
+fn local(name: &str) -> blitz_dom::QualName {
+    blitz_dom::QualName::new(None, blitz_dom::Namespace::from(""), blitz_dom::LocalName::from(name))
+}
+
+/// Every radio button in the document whose name is `name`.
+fn radios_named(doc: &blitz_dom::BaseDocument, name: &str) -> Vec<NodeId> {
+    let mut found = Vec::new();
+    let mut stack = vec![doc.root_node().id];
+    while let Some(id) = stack.pop() {
+        let Some(n) = doc.get_node(id) else { continue };
+        if n.element_data().map_or(false, |e| &*e.name.local == "input")
+            && n.attr(blitz_dom::local_name!("type")).map_or(false, |t| t.eq_ignore_ascii_case("radio"))
+            && n.attr(blitz_dom::local_name!("name")) == Some(name)
+        {
+            found.push(id);
+        }
+        stack.extend(n.children.iter().copied());
+    }
+    found
+}
+
 /// Font files to load (explicit list: the Kindle has no system fonts and
 /// fontconfig can't be cross-compiled). Families map onto CSS generics.
+/// The browser's own copy of Noto (SIL Open Font License, see `assets/fonts/NOTO-LICENSE.txt`), installed with
+/// the browser by `deploy/install-ssh.sh`. It does not depend on any other app on the Kindle.
 pub const DEFAULT_FONTS: &[&str] = &[
-    "/mnt/us/koreader/fonts/noto/NotoSans-Regular.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSans-Bold.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSans-Italic.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSerif-Regular.ttf",
-    "/mnt/us/koreader/fonts/noto/NotoSerif-Bold.ttf",
+    "/mnt/us/browser/fonts/NotoSans-Regular.ttf",
+    "/mnt/us/browser/fonts/NotoSans-Bold.ttf",
+    "/mnt/us/browser/fonts/NotoSans-Italic.ttf",
+    "/mnt/us/browser/fonts/NotoSerif-Regular.ttf",
+    "/mnt/us/browser/fonts/NotoSerif-Bold.ttf",
 ];
 
 /// Largest script we will run.
@@ -85,6 +156,9 @@ pub struct Page {
     /// Device pixels per CSS pixel. 1.0 for chrome and internal pages; web pages lay out at a phone width.
     scale: f32,
     content_h: f64,
+    /// The text of password fields, by node key. The page shows stars instead, so the typed text is not
+    /// drawn on the screen.
+    secrets: std::collections::HashMap<u64, String>,
 }
 
 impl Page {
@@ -139,6 +213,7 @@ impl Page {
             scroll_y: 0.0,
             scale,
             content_h: height as f64,
+            secrets: std::collections::HashMap::new(),
         };
         // Each step is contained: a layout panic on one step costs that step, not the page.
         contain(|| page.settle(pump));
@@ -148,6 +223,7 @@ impl Page {
         // the B:n placeholders. Do it here too, in case the page's own swap script failed.
         contain(|| page.swap_streamed_chunks());
         contain(|| page.settle(pump));
+        contain(|| page.label_selects());
         page.title = page.live_title().unwrap_or(page.title);
         page.content_h = contain(|| page.measure());
         // Painting culls against the document viewport, so widen it to the full
@@ -411,6 +487,63 @@ impl Page {
         bottom * s
     }
 
+    /// Every line of text on the page as last laid out (after a paint), top to bottom, in device pixels from
+    /// the top of the document: the
+    /// glyph box (typographic ascent and descent) and the baseline. Lines of different boxes on the same row
+    /// (columns) are one entry. The positions follow the layout tree as the painter does: each box from its
+    /// layout parent, and an inline root's lines from its content box.
+    pub fn text_lines(&self) -> Vec<TextLine> {
+        let doc = self.doc.borrow();
+        let s = self.scale as f64;
+        let mut lines = Vec::new();
+        let mut stack = vec![(doc.root_element().id, 0.0f64)];
+        while let Some((id, parent_y)) = stack.pop() {
+            let Some(node) = doc.get_node(id) else { continue };
+            if !node.is_element() && !node.flags.is_inline_root() {
+                continue;
+            }
+            let layout = node.final_layout();
+            let y = parent_y + layout.location.y as f64;
+            if node.flags.is_inline_root() && layout.size.height > 0.0 {
+                if let Some(text) = node.element_data().and_then(|e| e.inline_layout_data.as_ref()) {
+                    // Line metrics are in layout units (CSS px times the layout's scale).
+                    let unit = text.layout.scale().max(f32::EPSILON) as f64;
+                    let origin = y + (layout.padding.top + layout.border.top) as f64 + text.block_offset as f64;
+                    for line in text.layout.lines() {
+                        let m = line.metrics();
+                        if m.advance <= 0.0 {
+                            continue;
+                        }
+                        lines.push(TextLine {
+                            top: (origin + m.content_block_min_coord as f64 / unit) * s,
+                            baseline: (origin + m.baseline as f64 / unit) * s,
+                            bottom: (origin + m.content_block_max_coord as f64 / unit) * s,
+                        });
+                    }
+                }
+            }
+            let children = node.layout_children.borrow();
+            let kids: Vec<NodeId> = match children.as_ref() {
+                Some(c) => c.iter().copied().collect(),
+                None => node.children.iter().copied().collect(),
+            };
+            stack.extend(kids.into_iter().map(|c| (c, y)));
+        }
+        lines.sort_by(|a, b| a.baseline.total_cmp(&b.baseline));
+        // Lines on the same row (side by side) count once, covering both glyph boxes.
+        let mut merged: Vec<TextLine> = Vec::with_capacity(lines.len());
+        for l in lines {
+            match merged.last_mut() {
+                Some(prev) if (l.baseline - prev.baseline).abs() < 2.0 => {
+                    prev.top = prev.top.min(l.top);
+                    prev.bottom = prev.bottom.max(l.bottom);
+                }
+                _ => merged.push(l),
+            }
+        }
+        merged
+    }
+
     pub fn max_scroll(&self) -> f64 {
         (self.content_h - self.height as f64).max(0.0)
     }
@@ -440,6 +573,57 @@ impl Page {
 
     /// Jump to a URL fragment without reparsing the document or running its scripts.
     /// Compare attributes directly: IDs may contain punctuation, Unicode or CSS syntax.
+    /// Where each match of `query` sits on the page, in device pixels from the top of the page (not
+    /// scrolled). A match is the deepest element whose text contains the query, ignoring case. At most 500.
+    pub fn find_matches(&self, query: &str) -> Vec<f64> {
+        let q = query.to_lowercase();
+        if q.trim().is_empty() {
+            return Vec::new();
+        }
+        let doc = self.doc.borrow();
+        let mut found = Vec::new();
+        let mut stack = vec![doc.root_node().id];
+        // Depth-first in document order: a parent's text is checked before its children, and a match is the
+        // deepest element that contains the query.
+        let mut order = Vec::new();
+        while let Some(id) = stack.pop() {
+            let Some(node) = doc.get_node(id) else { continue };
+            order.push(id);
+            stack.extend(node.children.iter().rev().copied());
+        }
+        for id in order {
+            if found.len() >= 500 {
+                break;
+            }
+            let Some(node) = doc.get_node(id) else { continue };
+            if node.element_data().is_none() {
+                continue;
+            }
+            if !node.text_content().to_lowercase().contains(&q) {
+                continue;
+            }
+            // Skip the element when one of its children already holds the match.
+            let child_has = node.children.iter().any(|c| {
+                doc.get_node(*c)
+                    .map_or(false, |cn| cn.element_data().is_some() && cn.text_content().to_lowercase().contains(&q))
+            });
+            if child_has {
+                continue;
+            }
+            let size = node.final_layout().size;
+            if size.width <= 0.0 || size.height <= 0.0 {
+                continue;
+            }
+            found.push(node.absolute_position(0.0, 0.0).y as f64 * self.scale as f64);
+        }
+        found
+    }
+
+    /// Scroll so a device-pixel position from `find_matches` is comfortably on screen.
+    pub fn scroll_to_match(&mut self, y: f64) {
+        self.scroll_to((y - 160.0).max(0.0));
+    }
+
     pub fn scroll_to_fragment(&mut self, fragment: &str) -> bool {
         let name = percent_encoding::percent_decode_str(fragment).decode_utf8_lossy();
         let target = if name.is_empty() {
@@ -471,28 +655,50 @@ impl Page {
     /// Paint with the page moved down by `y_offset` device pixels. The browser
     /// uses this to keep the top of a page below the address bar.
     pub fn render_gray_at(&mut self, y_offset: u32) -> Vec<u8> {
+        let t0 = std::time::Instant::now();
         self.settle(&mut || true);
+        let t_settle = t0.elapsed();
         let mut painter = VelloCpuScenePainter::new(self.width as u16, self.height as u16);
         {
             let mut doc = self.doc.borrow_mut();
             blitz_paint::paint_scene(&mut painter, &mut doc, self.scale as f64, self.width, self.height, 0, y_offset);
         }
         let pixmap = painter.finish();
+        let t_paint = t0.elapsed() - t_settle;
         let px = pixmap.data_as_u8_slice();
         let mut gray = Vec::with_capacity((self.width * self.height) as usize);
         for p in px.chunks_exact(4) {
-            // Premultiplied RGBA composited over white.
+            // Premultiplied RGBA composited over white, then luma in integer arithmetic (the
+            // device's processor is slow at floating point).
             let inv = 255u16 - p[3] as u16;
-            let r = (p[0] as u16 + inv).min(255) as f32;
-            let g = (p[1] as u16 + inv).min(255) as f32;
-            let b = (p[2] as u16 + inv).min(255) as f32;
-            gray.push((0.299 * r + 0.587 * g + 0.114 * b).round() as u8);
+            let r = (p[0] as u16 + inv).min(255) as u32;
+            let g = (p[1] as u16 + inv).min(255) as u32;
+            let b = (p[2] as u16 + inv).min(255) as u32;
+            gray.push(((77 * r + 150 * g + 29 * b + 128) >> 8) as u8);
         }
+        eprintln!(
+            "[render] settle {:?}, paint {:?}, gray {:?}",
+            t_settle,
+            t_paint,
+            t0.elapsed() - t_settle - t_paint
+        );
         gray
     }
 
     /// Deliver a click at viewport point (x, y) to script listeners.
     /// Returns `Prevented` when script cancelled the default action.
+    /// Send an event (`input`, `change`, `submit`, ...) to the page's listeners on `node`. Returns what the
+    /// listeners did; `Prevented` means one called preventDefault.
+    fn fire(&mut self, node: NodeId, kind: &str) -> Click {
+        let Some(js) = self.js.as_ref() else { return Click::None };
+        let outcome = js.event(node, kind);
+        if outcome != Click::None {
+            self.settle(&mut || true);
+            self.content_h = self.measure();
+        }
+        outcome
+    }
+
     pub fn click_at(&mut self, x: f32, y: f32) -> Click {
         let Some(js) = self.js.as_ref() else { return Click::None };
         let target = self.doc.borrow().element_from_point(x / self.scale, (y + self.scroll_y as f32) / self.scale);
@@ -540,8 +746,9 @@ impl Page {
         }
     }
 
-    /// The text field under (x, y), if any: its node key and current value.
-    pub fn input_at(&self, x: f32, y: f32) -> Option<(u64, String)> {
+    /// The text field under (x, y), if any. Disabled and read-only fields cannot be edited, so they are not
+    /// returned.
+    pub fn input_at(&self, x: f32, y: f32) -> Option<Field> {
         let doc = self.doc.borrow();
         let mut id: NodeId = doc.element_from_point(x / self.scale, (y + self.scroll_y as f32) / self.scale)?;
         loop {
@@ -549,7 +756,18 @@ impl Page {
             if let Some(el) = node.element_data() {
                 let tag: &str = &el.name.local;
                 if tag == "textarea" || (tag == "input" && is_text_type(node.attr(blitz_dom::local_name!("type")))) {
-                    return Some((id.as_u64(), input_value(node)));
+                    if node.attr(blitz_dom::local_name!("disabled")).is_some()
+                        || node.attr(blitz_dom::local_name!("readonly")).is_some()
+                    {
+                        return None;
+                    }
+                    let password = node.attr(blitz_dom::local_name!("type")).map_or(false, |t| t.eq_ignore_ascii_case("password"));
+                    let value = if password {
+                        self.secrets.get(&id.as_u64()).cloned().unwrap_or_default()
+                    } else {
+                        input_value(node)
+                    };
+                    return Some(Field { key: id.as_u64(), value, password });
                 }
                 if tag == "a" || tag == "button" {
                     return None;
@@ -559,15 +777,221 @@ impl Page {
         }
     }
 
-    /// Store `value` in a text field and return the URL of its form if it submits by GET.
-    pub fn set_input_value(&mut self, key: u64, value: &str) -> Option<Submit> {
+    /// Store `value` in a text field. Committing a field does not submit its form.
+    pub fn set_input_value(&mut self, key: u64, value: &str) {
         let id = NodeId::from_u64(key);
+        self.store_input_value(id, value);
+        // Scripts hear about the new value when it is committed (not on each key).
+        self.fire(id, "input");
+        self.fire(id, "change");
+    }
+
+    fn store_input_value(&mut self, id: NodeId, value: &str) {
+        let key = id.as_u64();
+        let password = {
+            let doc = self.doc.borrow();
+            doc.get_node(id)
+                .and_then(|n| n.attr(blitz_dom::local_name!("type")))
+                .map_or(false, |t| t.eq_ignore_ascii_case("password"))
+        };
+        let shown = if password {
+            self.secrets.insert(key, value.to_string());
+            "*".repeat(value.chars().count())
+        } else {
+            value.to_string()
+        };
+        let mut doc = self.doc.borrow_mut();
+        let name = blitz_dom::QualName::new(None, blitz_dom::Namespace::from(""), blitz_dom::LocalName::from("value"));
+        doc.mutate().set_attribute(id, name, &shown);
+    }
+
+    /// The `<select>` under (x, y), if it is enabled: its options, and which one is chosen (the first when none
+    /// is marked, as browsers do).
+    pub fn select_at(&self, x: f32, y: f32) -> Option<SelectField> {
+        let doc = self.doc.borrow();
+        let mut id: NodeId = doc.element_from_point(x / self.scale, (y + self.scroll_y as f32) / self.scale)?;
+        loop {
+            let node = doc.get_node(id)?;
+            if let Some(el) = node.element_data() {
+                let tag: &str = &el.name.local;
+                if tag == "select" {
+                    if node.attr(blitz_dom::local_name!("disabled")).is_some() {
+                        return None;
+                    }
+                    let options = options_of(&doc, id);
+                    if options.is_empty() {
+                        return None;
+                    }
+                    let any_selected = options.iter().any(|o| doc.get_node(*o).map_or(false, |n| n.attr(blitz_dom::local_name!("selected")).is_some()));
+                    let title = node
+                        .attr(blitz_dom::local_name!("name"))
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "Choose".to_string());
+                    let options = options
+                        .iter()
+                        .enumerate()
+                        .map(|(i, o)| {
+                            let n = doc.get_node(*o);
+                            let label = n.map(|n| n.text_content().trim().to_string()).unwrap_or_default();
+                            let picked = match n {
+                                Some(n) if any_selected => n.attr(blitz_dom::local_name!("selected")).is_some(),
+                                _ => i == 0,
+                            };
+                            (label, picked)
+                        })
+                        .collect();
+                    return Some(SelectField { key: id.as_u64(), title, options });
+                }
+                if tag == "a" || tag == "button" || tag == "input" || tag == "textarea" {
+                    return None;
+                }
+            }
+            id = node.parent?;
+        }
+    }
+
+    /// Choose option `index` of the select `key`: it becomes the one marked selected, and the select shows its label.
+    pub fn select_pick(&mut self, key: u64, index: usize) {
+        let select = NodeId::from_u64(key);
         {
             let mut doc = self.doc.borrow_mut();
-            let name = blitz_dom::QualName::new(None, blitz_dom::Namespace::from(""), blitz_dom::LocalName::from("value"));
-            doc.mutate().set_attribute(id, name, value);
+            let options = options_of(&doc, select);
+            for (i, option) in options.iter().enumerate() {
+                if i == index {
+                    doc.mutate().set_attribute(*option, local("selected"), "true");
+                } else {
+                    doc.mutate().clear_attribute(*option, local("selected"));
+                }
+            }
         }
-        self.form_url_for(id, Some((id, value)))
+        self.show_select_label(select);
+        self.fire(select, "input");
+        self.fire(select, "change");
+    }
+
+    /// Give every select the label of its chosen option, so the page can draw it (see `prepare_html`).
+    fn label_selects(&mut self) {
+        let selects: Vec<NodeId> = {
+            let doc = self.doc.borrow();
+            doc.query_selector_all("select").map(|v| v.into_iter().collect()).unwrap_or_default()
+        };
+        for id in selects {
+            self.show_select_label(id);
+        }
+    }
+
+    /// The label of the chosen option (the first when none is marked) as the select's `data-kb-label`.
+    fn show_select_label(&mut self, select: NodeId) {
+        let mut doc = self.doc.borrow_mut();
+        let options = options_of(&doc, select);
+        let any_selected = options.iter().any(|o| doc.get_node(*o).map_or(false, |n| n.attr(blitz_dom::local_name!("selected")).is_some()));
+        let label = options
+            .iter()
+            .enumerate()
+            .find(|(i, o)| if any_selected { doc.get_node(**o).map_or(false, |n| n.attr(blitz_dom::local_name!("selected")).is_some()) } else { *i == 0 })
+            .and_then(|(_, o)| doc.get_node(*o).map(|n| n.text_content().trim().to_string()))
+            .unwrap_or_default();
+        doc.mutate().set_attribute(select, local("data-kb-label"), &label);
+    }
+
+    /// Toggle a checkbox, or select a radio button (clearing the others of its group), at (x, y).
+    /// Returns true when the page changed (then `input` and `change` are sent). Disabled controls do not change.
+    pub fn toggle_choice_at(&mut self, x: f32, y: f32) -> bool {
+        match self.toggle_choice_node(x, y) {
+            Some(id) => {
+                self.fire(id, "input");
+                self.fire(id, "change");
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The checkbox or radio at (x, y), after its state changed. None when nothing changed.
+    fn toggle_choice_node(&self, x: f32, y: f32) -> Option<NodeId> {
+        let mut doc = self.doc.borrow_mut();
+        let mut id: NodeId = match doc.element_from_point(x / self.scale, (y + self.scroll_y as f32) / self.scale) {
+            Some(id) => id,
+            None => return None,
+        };
+        loop {
+            let Some(node) = doc.get_node(id) else { return None };
+            if let Some(el) = node.element_data() {
+                let tag: &str = &el.name.local;
+                if tag == "input" {
+                    let kind = node.attr(blitz_dom::local_name!("type")).unwrap_or("").to_ascii_lowercase();
+                    if matches!(kind.as_str(), "checkbox" | "radio") {
+                        if node.attr(blitz_dom::local_name!("disabled")).is_some() {
+                            return None;
+                        }
+                        let checked = node.attr(blitz_dom::local_name!("checked")).is_some();
+                        let name = node.attr(blitz_dom::local_name!("name")).map(str::to_string);
+                        if kind == "radio" {
+                            if checked {
+                                return None; // a checked radio stays checked
+                            }
+                            if let Some(name) = name.as_deref() {
+                                for other in radios_named(&doc, name) {
+                                    doc.mutate().clear_attribute(other, local("checked"));
+                                }
+                            }
+                            doc.mutate().set_attribute(id, local("checked"), "true");
+                        } else if checked {
+                            doc.mutate().clear_attribute(id, local("checked"));
+                        } else {
+                            doc.mutate().set_attribute(id, local("checked"), "true");
+                        }
+                        return Some(id);
+                    }
+                }
+                if tag == "a" || tag == "button" || tag == "textarea" {
+                    return None;
+                }
+            }
+            match node.parent {
+                Some(parent) => id = parent,
+                None => return None,
+            }
+        }
+    }
+
+    /// Send the `submit` event for the form of the submit button under (x, y). Returns false when a script
+    /// cancelled it, so the form must not be sent. True when there is no such form or nothing cancelled it.
+    pub fn form_submit_allowed(&mut self, x: f32, y: f32) -> bool {
+        let form = {
+            let doc = self.doc.borrow();
+            let Some(mut id) = doc.element_from_point(x / self.scale, (y + self.scroll_y as f32) / self.scale) else { return true };
+            let button = loop {
+                let Some(node) = doc.get_node(id) else { return true };
+                if let Some(el) = node.element_data() {
+                    let tag: &str = &el.name.local;
+                    let is_submit = tag == "button" && node.attr(blitz_dom::local_name!("type")).map_or(true, |t| t == "submit")
+                        || (tag == "input" && node.attr(blitz_dom::local_name!("type")) == Some("submit"));
+                    if is_submit {
+                        break id;
+                    }
+                    if tag == "a" {
+                        return true;
+                    }
+                }
+                match node.parent {
+                    Some(p) => id = p,
+                    None => return true,
+                }
+            };
+            let mut form = button;
+            loop {
+                let Some(n) = doc.get_node(form) else { return true };
+                if n.element_data().map_or(false, |e| &*e.name.local == "form") {
+                    break form;
+                }
+                match n.parent {
+                    Some(p) => form = p,
+                    None => return true,
+                }
+            }
+        };
+        self.fire(form, "submit") != Click::Prevented
     }
 
     /// If the tap landed on a submit button (or a form-submit input), the GET URL
@@ -624,17 +1048,52 @@ impl Page {
             let Some(n) = doc.get_node(id) else { continue };
             let Some(el) = n.element_data() else { continue };
             let tag: &str = &el.name.local;
+            if tag == "select" {
+                let Some(name) = n.attr(blitz_dom::local_name!("name")) else { continue };
+                if n.attr(blitz_dom::local_name!("disabled")).is_some() {
+                    continue;
+                }
+                let options = options_of(&doc, id);
+                let any_selected = options.iter().any(|o| doc.get_node(*o).map_or(false, |o| o.attr(blitz_dom::local_name!("selected")).is_some()));
+                let chosen = options
+                    .iter()
+                    .enumerate()
+                    .find(|(i, o)| if any_selected { doc.get_node(**o).map_or(false, |o| o.attr(blitz_dom::local_name!("selected")).is_some()) } else { *i == 0 })
+                    .and_then(|(_, o)| doc.get_node(*o));
+                if let Some(option) = chosen {
+                    let value = option
+                        .attr(blitz_dom::local_name!("value"))
+                        .map(str::to_string)
+                        .unwrap_or_else(|| option.text_content().trim().to_string());
+                    pairs.push((name.to_string(), value));
+                }
+                continue;
+            }
             if !matches!(tag, "input" | "textarea") {
                 continue;
             }
             let Some(name) = n.attr(blitz_dom::local_name!("name")) else { continue };
+            if n.attr(blitz_dom::local_name!("disabled")).is_some() {
+                continue;
+            }
             let kind = n.attr(blitz_dom::local_name!("type")).unwrap_or("text");
-            if matches!(kind, "submit" | "button" | "image" | "reset" | "checkbox" | "radio" | "file") {
+            if matches!(kind, "submit" | "button" | "image" | "reset" | "file") {
+                continue;
+            }
+            if matches!(kind, "checkbox" | "radio") {
+                if n.attr(blitz_dom::local_name!("checked")).is_none() {
+                    continue;
+                }
+                let value = n.attr(blitz_dom::local_name!("value")).unwrap_or("on");
+                pairs.push((name.to_string(), value.to_string()));
                 continue;
             }
             let value = match override_value {
                 Some((key, v)) if key == id => v.to_string(),
-                _ => input_value(n),
+                _ => match self.secrets.get(&id.as_u64()) {
+                    Some(secret) if kind.eq_ignore_ascii_case("password") => secret.clone(),
+                    _ => input_value(n),
+                },
             };
             pairs.push((name.to_string(), value));
         }
@@ -718,6 +1177,20 @@ pre{{white-space:pre-wrap;font-size:28px}}
     /// The address a script asked this page to load (`location.href = …`), once.
     pub fn take_navigation(&self) -> Option<String> {
         self.js.as_ref().and_then(|js| js.take_navigation())
+    }
+
+    /// The address a script set with history.pushState or replaceState, if any (taken once).
+    pub fn take_url_changes(&self) -> Vec<(String, bool, String)> {
+        self.js.as_ref().map(|js| js.take_url_changes()).unwrap_or_default()
+    }
+
+    /// Deliver popstate with `state_json` to the page's scripts (the page's own history entry is the one going back to).
+    pub fn pop_state(&mut self, state_json: &str) {
+        if let Some(js) = self.js.as_ref() {
+            js.pop_state(state_json);
+        }
+        self.settle(&mut || true);
+        self.content_h = self.measure();
     }
 
     pub fn set_location(&mut self, url: &str) {
@@ -853,6 +1326,60 @@ pub fn extract_title(html: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn text_lines_are_where_the_text_is_painted() {
+        // The repository's copy of the fonts; the device reads its own copy in /mnt/us/browser/fonts. Fonts load once per thread.
+        let font = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/NotoSans-Regular.ttf");
+        std::env::set_var("KB_FONTS", font);
+        let para = "Nói xong, hắn lấy ra một chiếc hộp ngọc. Sau khi mở nắp, một luồng hàn khí tỏa ra, bên trong lộ ra năm hạt sen đỏ như máu. ";
+        let html = format!(
+            "<!doctype html><html><head><style>body{{margin:12px;font:20px sans-serif;line-height:1.8}}p{{margin:0 0 1lh}}</style></head><body><h2>Chương 1</h2>{}</body></html>",
+            (0..12).map(|i| format!("<p>{}</p>", para.repeat(1 + i % 3))).collect::<String>()
+        );
+        let mut page = Page::new_scaled(&html, "https://example.org/", 600, 800,
+            Arc::new(SyncNet::new(1024)), &mut || true, Some(300.0));
+        // Lines are read from the layout, which the first paint settles (the browser always paints first).
+        page.render_gray();
+        let lines = page.text_lines();
+        assert!(lines.len() > 30, "{} lines", lines.len());
+        // With paragraphs one line apart, the body text sits on one grid: every gap is a whole number of lines.
+        let body: Vec<f64> = lines.iter().skip(1).map(|l| l.baseline).collect();
+        let pitch = body[1] - body[0];
+        for pair in body.windows(2) {
+            let n = (pair[1] - pair[0]) / pitch;
+            assert!((n - n.round()).abs() < 0.02, "gap {} is not whole lines of {pitch}", pair[1] - pair[0]);
+        }
+        // The painted text: rows with ink, as bands; each band's dense part ends at its baseline.
+        page.scroll_to(700.0);
+        let gray = page.render_gray();
+        let (w, h) = (600usize, 800usize);
+        let ink: Vec<usize> = (0..h).map(|y| gray[y * w..(y + 1) * w].iter().filter(|&&p| p < 128).count()).collect();
+        let mut painted = Vec::new();
+        let mut y = 0;
+        while y < h {
+            if ink[y] == 0 {
+                y += 1;
+                continue;
+            }
+            let start = y;
+            while y < h && ink[y] > 0 {
+                y += 1;
+            }
+            let band = &ink[start..y];
+            let peak = *band.iter().max().unwrap();
+            let last = band.iter().rposition(|&c| c * 2 > peak).unwrap();
+            // Whole bands only (not cut by the screen edges).
+            if start > 0 && y < h {
+                painted.push((start + last) as f64);
+            }
+        }
+        assert!(painted.len() > 5);
+        for b in painted {
+            let near = lines.iter().map(|l| (l.baseline - 700.0 - b).abs()).fold(f64::MAX, f64::min);
+            assert!(near <= 2.0, "painted baseline {b} is {near} rows from the nearest layout line");
+        }
+    }
 
     #[test]
     fn internal_location_keeps_the_web_base_for_relative_links() {

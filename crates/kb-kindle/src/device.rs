@@ -10,10 +10,10 @@ use kb_app::{DeviceControl, DeviceStatus, LEVEL_MAX};
 const POWERD: &str = "com.lab126.powerd";
 const WIFID: &str = "com.lab126.wifid";
 const CMD: &str = "com.lab126.cmd";
-const BATTERY_SYSFS: &str = "/sys/class/power_supply/max77796-battery/capacity";
-const CHARGING_SYSFS: &str = "/sys/class/power_supply/max77796-charger/charging";
-const CHARGER_STATUS_SYSFS: &str = "/sys/class/power_supply/max77796-charger/status";
-const CHARGER_ONLINE_SYSFS: &str = "/sys/class/power_supply/max77796-charger/online";
+const BATTERY_SYSFS: &str = crate::profile::ACTIVE.battery_capacity;
+const CHARGING_SYSFS: &str = crate::profile::ACTIVE.charger_charging;
+const CHARGER_STATUS_SYSFS: &str = crate::profile::ACTIVE.charger_status;
+const CHARGER_ONLINE_SYSFS: &str = crate::profile::ACTIVE.charger_online;
 
 /// Reads and sets the Kindle's frontlight, warmth, battery, Wi-Fi and clock.
 pub struct KindleDevice;

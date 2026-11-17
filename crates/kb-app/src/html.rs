@@ -3,10 +3,19 @@
 
 use crate::settings::Settings;
 
-pub(crate) fn prepare_html(html: &str, settings: &Settings) -> String {
-    let mut css = String::from("<style>img{background:#ececec}");
+/// Prepare a document for the page. With `placeholders` (web pages with images turned off), each image is
+/// replaced by a box that shows its alt text, so the reader sees what was there.
+pub(crate) fn prepare_html(html: &str, settings: &Settings, placeholders: bool, scripts: bool) -> String {
+    let html = if placeholders { image_placeholders(html) } else { html.to_string() };
+    let html = if scripts { html } else { without_scripts(&html) };
+    let html = html.as_str();
+    let mut css = String::from("<style>select{display:inline-block;min-width:240px;min-height:60px;border:2px solid #000;background:#fff;color:#111;font-size:32px;margin:6px 0}select::after{content:attr(data-kb-label)}img{background:#ececec}.kb-alt{display:inline-block;border:2px solid #888;border-radius:6px;padding:0 8px;margin:4px 0;color:#444;font-size:0.9em;line-height:1.5}");
     if settings.text_pct != 100 {
         css.push_str(&format!("html{{zoom:{}%}}", settings.text_pct));
+    }
+    if settings.book_lines {
+        // One blank line between paragraphs: the paragraph gap is a whole line, so all lines share one grid.
+        css.push_str("p{margin-top:0!important;margin-bottom:1lh!important}");
     }
     css.push_str("</style>");
     let lower = html.to_ascii_lowercase();
@@ -46,11 +55,92 @@ mod tests {
         let out = prepare_html(
             "<!doctype html><html><head><title>t</title></head><body></body></html>",
             &settings,
+            false,
+            true,
         );
         assert!(out.starts_with("<!doctype html><html><head><style>"));
         assert!(out.contains("zoom:125%"));
-        let plain = prepare_html("<!doctype html><p>x</p>", &Settings::default());
+        assert!(out.contains("margin-bottom:1lh"));
+        let off = prepare_html("<p>x</p>", &Settings { book_lines: false, ..Settings::default() }, false, true);
+        assert!(!off.contains("1lh"));
+        let plain = prepare_html("<!doctype html><p>x</p>", &Settings::default(), false, true);
         assert!(plain.starts_with("<!doctype html><style>"));
+    }
+
+    #[test]
+    fn images_become_alt_text_boxes_when_images_are_off() {
+        let out = prepare_html(
+            "<p><img src=\"a.png\" alt=\"Cover of the book\"> and <IMG src=b.png> and <img alt='A & B'></p>",
+            &Settings::default(),
+            true,
+            true,
+        );
+        assert!(out.contains("<span class=\"kb-alt\">[Cover of the book]</span>"), "{out}");
+        assert!(out.contains("<span class=\"kb-alt\">[image]</span>"), "{out}");
+        assert!(out.contains("<span class=\"kb-alt\">[A &amp; B]</span>"), "{out}");
+        assert!(!out.to_ascii_lowercase().contains("<img"), "{out}");
+    }
+
+    #[test]
+    fn scripts_are_removed_and_noscript_shown_when_scripts_are_off() {
+        let page = "<body><script>alert(1)</script><p>text</p><noscript><p>Enable scripts</p></noscript><SCRIPT src=x.js></SCRIPT></body>";
+        let off = prepare_html(page, &Settings::default(), false, false);
+        assert!(!off.to_ascii_lowercase().contains("<script"), "{off}");
+        assert!(!off.contains("alert"), "{off}");
+        assert!(off.contains("<div class=\"kb-noscript\"><p>Enable scripts</p></div>"), "{off}");
+        let on = prepare_html(page, &Settings::default(), false, true);
+        assert!(on.contains("alert(1)"), "{on}");
+    }
+
+    #[test]
+    fn images_are_kept_when_placeholders_are_not_wanted() {
+        let out = prepare_html("<p><img src=\"a.png\" alt=\"x\"></p>", &Settings::default(), false, true);
+        assert!(out.contains("<img src=\"a.png\""));
+    }
+}
+
+/// With scripts off: remove each `<script>` element, and show `<noscript>` content as ordinary content.
+fn without_scripts(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        let Some(at) = lower.find("<script") else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..at]);
+        match lower[at..].find("</script>") {
+            Some(end) => rest = &rest[at + end + "</script>".len()..],
+            None => break, // an unclosed script runs to the end of the document
+        }
+    }
+    // noscript content is shown when scripts are off: the element becomes a plain block.
+    out.replace("<noscript", "<div class=\"kb-noscript\"").replace("</noscript>", "</div>")
+        .replace("<NOSCRIPT", "<div class=\"kb-noscript\"").replace("</NOSCRIPT>", "</div>")
+}
+
+/// Replace each `<img>` tag with a span showing its alt text in brackets (`[image]` without alt text).
+fn image_placeholders(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        let lower = rest.to_ascii_lowercase();
+        let Some(at) = lower.find("<img") else {
+            out.push_str(rest);
+            return out;
+        };
+        // The tag ends at the first '>' after it (an image tag never contains one in its attributes here).
+        let Some(end) = rest[at..].find('>') else {
+            out.push_str(rest);
+            return out;
+        };
+        let tag = &rest[at..at + end + 1];
+        out.push_str(&rest[..at]);
+        let alt = attr_value(tag, "alt").map(|a| a.trim().to_string()).filter(|a| !a.is_empty());
+        let text = alt.unwrap_or_else(|| "image".to_string());
+        out.push_str(&format!("<span class=\"kb-alt\">[{}]</span>", esc(&text)));
+        rest = &rest[at + end + 1..];
     }
 }
 

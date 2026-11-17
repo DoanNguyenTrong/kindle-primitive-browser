@@ -69,7 +69,7 @@ impl Browser {
             if let Some(page) = self.page.as_mut() {
                 page.scroll_to(saved);
             }
-            self.page_dirty = true;
+            self.mark_page_dirty();
             self.touch(0, self.height, Wave::Text);
         }
     }
