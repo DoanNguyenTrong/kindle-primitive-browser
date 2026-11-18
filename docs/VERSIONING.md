@@ -47,7 +47,7 @@ Tags are never moved or reused. If a release is wrong, publish a new patch versi
 
 ## Current state
 
-- Workspace version: **0.2.7**, released as tag `v0.2.7` (2026-11-17). Earlier release tags: `v0.2.6`, `v0.2.1`, `v0.1.18`, `v0.1.17`.
+- Workspace version: **0.2.16**, released as tag `v0.2.16` (2026-11-18). Earlier release tags: `v0.2.7`, `v0.2.6`, `v0.2.1`, `v0.1.18`, `v0.1.17`.
 - Earlier versions (0.1.0 to 0.1.16) were development device builds, so they have no tags.
 
 ## Naming

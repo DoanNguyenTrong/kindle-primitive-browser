@@ -2,9 +2,13 @@
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
-[Semantic Versioning](https://semver.org/). The workspace version is `0.2.7`, released as tag `v0.2.7`.
+[Semantic Versioning](https://semver.org/). The workspace version is `0.2.16`, released as tag `v0.2.16`.
 
 ## [Unreleased]
+
+## [0.2.16] - 2026-11-18
+
+Device builds 0.2.8 to 0.2.15 are part of this release; they were not tagged.
 
 ### Removed
 - The shell engine (`crates/kb-term`, ported from KOReader's terminal plugin) moved to Primitive Terminal, which is its own app.
@@ -12,6 +16,7 @@ All notable changes to this project are recorded here. The format follows
 - Diagnostics (the menu's Diagnostics button and `kbp://diagnostics`), with its checks, Check SSH, Start and Stop SSH, Set SSH password and public DNS. They moved to the launcher's Settings > SSH & DNS, which also has the quick settings' SSH switch. The browser's quick settings have no SSH switch: Airplane, Night, Images and Settings remain.
 
 ### Added
+- Quick settings like the launcher's: round buttons (Airplane, Night, Images, Settings) that fill when on, brightness and warmth rows, and a System section with CPU, memory and storage. The figures are read on each opening of the panel. The icons and figures come from `primitive-quick` in the tools submodule.
 - The licence texts for the device tools (FBInk under GPL-3.0, Dropbear, zlib) are in `assets/device/licenses/`, with the source references for the FBInk and Dropbear binaries in `assets/device/README.md`. The release package and the device install carry them in `browser/bin/licenses/`.
 - Start SSH shows the root password: the one last set with Set SSH password (saved in `browser/ssh/password.txt`), or the device default before one is set.
 - The library icon is a portrait cover (600x920), like the book covers.
@@ -24,6 +29,10 @@ All notable changes to this project are recorded here. The format follows
 
 ### Changed
 - `deploy/install-ssh.sh` stops the browser before replacing its files; replacing a running program's file on the FAT storage can crash it (SIGBUS).
+- The browser runs under Primitive Launcher: with `PRIMITIVE_LAUNCHER=1` set by the launcher's supervisor, `deploy/Browser.sh` does not stop, restore or open the stock UI, and the browser returns to the launcher at once on exit.
+- The on-screen keyboard uses the shared key style from `primitive-keyboard` in the tools submodule, as the launcher does.
+- `scripts/build-device.sh` installs over SSH when the Kindle is on Wi-Fi or `KINDLE_HOST` is set; over USB only when the Kindle is mounted.
+- The release and CI workflows check out the `tools/` submodule, which the build depends on.
 
 ## [0.2.7] - 2026-11-17
 
