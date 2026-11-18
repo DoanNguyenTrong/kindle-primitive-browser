@@ -316,12 +316,13 @@ impl Browser {
                 *px = 255 - *px;
             }
         }
-        self.pressed_rows = Some((y0, y1));
+        self.pressed_rows = Some(((x0, x1), (y0, y1)));
         Some(Update {
             gray,
             width: w,
             height: self.height,
             rows: (y0, y1),
+            cols: (x0, x1),
             wave: Wave::Fast,
         })
     }

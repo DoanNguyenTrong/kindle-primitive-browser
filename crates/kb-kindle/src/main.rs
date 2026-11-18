@@ -106,6 +106,12 @@ fn framebuffer_turn() -> Option<u32> {
     turn_from_fbink(&String::from_utf8_lossy(&out.stdout))
 }
 
+/// The launcher's turn ("U" or "D" in /var/tmp/kl/orientation), used when neither source above has one.
+/// Written by Primitive Launcher, which keeps the framework stopped.
+fn launcher_turn() -> Option<u32> {
+    turn_from_framework(&std::fs::read_to_string("/var/tmp/kl/orientation").ok()?)
+}
+
 /// The turn now: the framework's, else the framebuffer's. Both are returned for the log.
 fn display_turn() -> (Option<u32>, Option<u32>) {
     (framework_turn(), framebuffer_turn())
@@ -117,7 +123,7 @@ fn display_turn_watch() {
     loop {
         thread::sleep(Duration::from_secs(1));
         let (framework, framebuffer) = display_turn();
-        let Some(turn) = framework.or(framebuffer) else { continue };
+        let Some(turn) = framework.or(framebuffer).or_else(launcher_turn) else { continue };
         if PANEL_ROTA.swap(turn, Ordering::Relaxed) != turn {
             log(&format!("display turned: rota {turn} (framework {framework:?}, framebuffer {framebuffer:?})"));
         }
@@ -358,7 +364,8 @@ impl Display {
                 _ => self.page_wave.as_str(),
             }
         };
-        let mut region = u.region();
+        // Only the changed columns and rows go to the panel (a key highlight is one key, not the row).
+        let (x, cw, mut region) = u.changed_area();
         // Dithering is for page content only: bars, progress and flashes keep their own rendering.
         let dither = self.page_dither && !flash && u.wave == Wave::Text;
         // Page content is cut to the panel's 16 gray steps before it is sent. Each extra gray level is one more
@@ -374,24 +381,24 @@ impl Display {
             solidify(&mut region);
         }
         let wave = wave.to_string();
-        let path = self.blit(u.width, y0, y1 - y0, &region, &wave, flash);
+        let path = self.blit(x, cw, y0, y1 - y0, &region, &wave, flash);
         self.last_draw = Instant::now();
         log(&format!("eink {wave} rows ({y0}, {y1}) {path} in {:?}", t0.elapsed()));
     }
 
     /// Draw in-process when possible, else with fbink: the screen is turned, or the driver refused the update.
     /// Returns which path drew.
-    fn blit(&mut self, width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) -> &'static str {
+    fn blit(&mut self, x: u32, width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) -> &'static str {
         if self.direct {
             if let (Some(panel), Some(code)) = (self.panel.as_mut(), eink::wave_code(wave)) {
-                match panel.draw(width, y, rows, gray, code, flash) {
+                match panel.draw(x, width, y, rows, gray, code, flash) {
                     Ok(true) => return "direct",
                     Ok(false) => {}
                     Err(e) => log(&format!("panel: {e}; using fbink")),
                 }
             }
         }
-        blit_region(width, y, rows, gray, wave, flash);
+        blit_region(x, width, y, rows, gray, wave, flash);
         "fbink"
     }
 
@@ -409,7 +416,7 @@ impl Display {
                 strip[row * w as usize + x] = 0;
             }
         }
-        self.blit(w, TOP_H - PROGRESS_H, PROGRESS_H, &strip, "DU", false);
+        self.blit(0, w, TOP_H - PROGRESS_H, PROGRESS_H, &strip, "DU", false);
     }
 }
 
@@ -537,14 +544,14 @@ fn solidify(gray: &mut [u8]) {
 const FRAME_FILE: &str = "/var/tmp/kb-frame.bmp";
 
 /// Show `rows` rows of gray pixels at row `y` with the given fbink waveform.
-fn blit_region(width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) {
+fn blit_region(x: u32, width: u32, y: u32, rows: u32, gray: &[u8], wave: &str, flash: bool) {
     let bmp = gray_bmp(width, rows, gray);
     let path = FRAME_FILE;
     if let Err(e) = fs::write(path, bmp) {
         return log(&format!("write frame: {e}"));
     }
     let mut cmd = Command::new(FBINK);
-    cmd.arg("-g").arg(format!("file={path},x=0,y={y}"));
+    cmd.arg("-g").arg(format!("file={path},x={x},y={y}"));
     cmd.args(["-W", wave]);
     if flash {
         cmd.arg("-f");

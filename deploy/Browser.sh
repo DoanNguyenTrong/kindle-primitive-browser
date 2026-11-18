@@ -23,6 +23,10 @@ cd "$DIR" || exit 1
 
 log() { echo "[launcher $(date '+%H:%M:%S')] $*" >> "$LOG"; }
 
+# Set by Primitive Launcher, which has already stopped the framework and owns the screen. Then this script
+# does not touch the stock UI at all: no stop, no restore, no library call (see the functions below).
+LAUNCHED=${PRIMITIVE_LAUNCHER:-0}
+
 # Keep the log small on the Kindle's flash: keep the last ~200 KB.
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 204800 ]; then
     tail -c 102400 "$LOG" > "$LOG.tmp" && mv "$LOG.tmp" "$LOG"
@@ -68,6 +72,7 @@ framework_stop() {
 
 # Take the UI for the browser. The marker is written first, so a launcher killed here is still restored.
 stop_ui() {
+    [ "$LAUNCHED" = 1 ] && { log "under Primitive Launcher: the UI is already stopped"; return 0; }
     if [ "$MODE" = stop ]; then
         log "stopping framework ($INIT)"
         echo stop > "$MARK"
@@ -84,6 +89,7 @@ stop_ui() {
 # Give the UI back: undo what the launcher changed. A marker without a mode (from an earlier version)
 # means the framework was stopped.
 restore_ui() {
+    [ "$LAUNCHED" = 1 ] && { rm -f "$MARK"; return 0; }
     [ -f "$MARK" ] || return 0
     case "$(head -n 1 "$MARK" 2>/dev/null)" in
         keep)
@@ -103,6 +109,7 @@ restore_ui() {
 # Open the library. With the UI kept running this succeeds at once. When the framework was stopped it
 # may need a moment to come up, so retry every quarter second (up to 10 s) rather than wait first.
 land_on_home() {
+    [ "$LAUNCHED" = 1 ] && return 0
     [ "$INIT" = upstart ] || return 0
     if ! command -v lipc-set-prop >/dev/null 2>&1; then
         log "lipc-set-prop not found; the UI opens its default screen"

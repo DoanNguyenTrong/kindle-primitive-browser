@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/kb-net", "crates/kb-engine", "crates/kb-js", "crates/kb-app", "crates/kb-desktop", "crates/kb-kindle", "crates/kb-term"]
+members = ["crates/kb-net", "crates/kb-engine", "crates/kb-js", "crates/kb-app", "crates/kb-desktop", "crates/kb-kindle"]
 exclude = ["spike"]
 
 [workspace.package]
-version = "0.2.6"
+version = "0.2.16"
 edition = "2021"
 license = "AGPL-3.0-only"
 

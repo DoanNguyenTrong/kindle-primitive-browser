@@ -20,15 +20,30 @@ pub struct Update {
     pub width: u32,
     pub height: u32,
     pub rows: (u32, u32),
+    /// The columns `[x0, x1)` that changed. A tap highlight changes one key, so its update covers only the key's
+    /// columns; every other update covers the full width.
+    pub cols: (u32, u32),
     pub wave: Wave,
 }
 
 impl Update {
-    /// Rows `[start, end)` as a standalone gray buffer.
+    /// Rows `[start, end)` as a standalone gray buffer (full width).
     pub fn region(&self) -> Vec<u8> {
         let (a, b) = self.rows;
         let w = self.width as usize;
         self.gray[a as usize * w..b as usize * w].to_vec()
+    }
+
+    /// The changed rectangle: (x, width, gray), where the gray is the rows of the columns `[x, x + width)`.
+    pub fn changed_area(&self) -> (u32, u32, Vec<u8>) {
+        let (a, b) = self.rows;
+        let (x0, x1) = (self.cols.0.min(self.width), self.cols.1.min(self.width));
+        let w = self.width as usize;
+        let mut out = Vec::with_capacity(((b - a) * (x1 - x0)) as usize);
+        for row in a as usize..b as usize {
+            out.extend_from_slice(&self.gray[row * w + x0 as usize..row * w + x1 as usize]);
+        }
+        (x0, x1 - x0, out)
     }
 }
 
@@ -70,5 +85,21 @@ pub(super) struct TabSave {
 impl TabSave {
     pub(super) fn empty() -> TabSave {
         TabSave::default()
+    }
+}
+
+#[cfg(test)]
+mod update_area_tests {
+    use super::*;
+
+    #[test]
+    fn changed_area_is_the_columns_and_rows_that_changed() {
+        // A 4 x 3 screen: the value of each pixel is its index.
+        let gray: Vec<u8> = (0..12).collect();
+        let whole = Update { gray: gray.clone(), width: 4, height: 3, rows: (0, 3), cols: (0, 4), wave: Wave::Text };
+        assert_eq!(whole.changed_area(), (0, 4, gray.clone()));
+        // Columns 1..3 of rows 1..3: the two middle pixels of the last two rows.
+        let key = Update { gray, width: 4, height: 3, rows: (1, 3), cols: (1, 3), wave: Wave::Fast };
+        assert_eq!(key.changed_area(), (1, 2, vec![5, 6, 9, 10]));
     }
 }

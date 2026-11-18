@@ -284,13 +284,6 @@ run set_interval_bounded_and_cancellable "open $BASE/interval.html
 text #out
 quit" "[text] #out: ticks:3"
 
-# Check SSH reads the server state; off the Kindle it reports that there is nothing to check.
-run ssh_check_off_kindle "open kbp://home
-action menu
-tapsel a[href=\"kbp://diagnostics\"]
-tapsel a[href=\"kb:ssh:check\"]
-quit" "[fix] Check SSH: status Some(0), timed out false" "[fix]   not a Kindle: nothing to check"
-
 # The Display sheet holds the e-ink refresh choices: page waveform, bars and taps, flash on load, and a refresh.
 run display_refresh_choices "open $BASE/plain.html
 action menu
@@ -525,6 +518,15 @@ assert url $BASE/plain.html
 open $BASE/redirect_meta.html
 assert url $BASE/plain.html
 quit" "[assert] url $BASE/plain.html: PASS"
+
+# A key press highlights only that key: the update covers the key's columns and rows, not the whole row. The
+# device sends only that rectangle to the panel, so the rest of the row does not flash.
+run keyboard_press_highlights_one_key "open $BASE/form.html
+tapsel input[name=q]
+press 316 1157
+press 1150 1450
+press 120 1450
+quit" "[press] highlight rows (1098, 1222) cols (262, 378)" "[press] highlight rows (1362, 1486) cols (1076, 1252)" "[press] highlight rows (1362, 1486) cols (12, 188)"
 
 # The keyboard's third layer: "#+=" from the symbols layer, and "123" back.
 run keyboard_third_symbol_layer "open kbp://home
@@ -842,50 +844,6 @@ action menu
 tapsel a[href=\"kbp://bookmarks\"]
 shot 21-menu-opens-bookmarks
 quit" "[shot] 01-home" "[shot] 21-menu-opens-bookmarks" "[shot] 17-error-page"
-
-# Diagnostics: the menu opens the page, and Run checks runs each check through the shell engine.
-run diagnostics_runs_checks "open kbp://home
-action menu
-tapsel a[href=\"kbp://diagnostics\"]
-count .diag
-tapsel a[href=\"kb:diag\"]
-count .diag
-shot 22-diagnostics
-quit" "[count] .diag: 0" "[count] .diag: 9" "[diag] Shell engine: status Some(0), timed out false" "[diag] Browser processes: status" "[diag]   ok" "[shot] 22-diagnostics"
-
-# DNS change from the diagnostics page: off the Kindle (no /mnt/us) it must report that nothing changed.
-run dns_change_refuses_off_kindle "open kbp://home
-action menu
-tapsel a[href=\"kbp://diagnostics\"]
-tapsel a[href=\"kb:dns:public\"]
-count .diag
-shot 25-dns-change
-quit" "[fix] Set public DNS: status Some(0), timed out false" "[fix]   not a Kindle: nothing changed" "[count] .diag: 1" "[shot] 25-dns-change"
-
-# SSH start from the diagnostics page: off the Kindle it must report that nothing changed.
-run ssh_start_refuses_off_kindle "open kbp://home
-action menu
-tapsel a[href=\"kbp://diagnostics\"]
-tapsel a[href=\"kb:ssh:toggle\"]
-shot 27-ssh-start
-quit" "[fix] Start SSH: status Some(0), timed out false" "[fix]   not a Kindle: nothing changed" "[fix]   ssh -p 2222 root@no-address" "[shot] 27-ssh-start" "[shot] 27-ssh-start"
-
-# SSH password from the keyboard: off the Kindle it must report that nothing changed, and the typed
-# password must not show up in the log.
-run ssh_password_refuses_off_kindle "open kbp://home
-action menu
-tapsel a[href=\"kbp://diagnostics\"]
-tapsel a[href=\"kb:ssh:password\"]
-tapsel a[href=\"kb:c:112\"]
-tapsel a[href=\"kb:c:97\"]
-tapsel a[href=\"kb:c:115\"]
-tapsel a[href=\"kb:c:115\"]
-tapsel a[href=\"kb:c:119\"]
-tapsel a[href=\"kb:c:111\"]
-tapsel a[href=\"kb:c:114\"]
-tapsel a[href=\"kb:c:100\"]
-tapsel a[href=\"kb:go\"]
-quit" "[fix] Set SSH password: status Some(0), timed out false" "[fix]   not a Kindle: nothing changed"
 
 # --- live sites (opt-in) ----------------------------------------------------------
 if [ $NETWORK -eq 1 ]; then

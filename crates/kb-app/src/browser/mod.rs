@@ -20,7 +20,6 @@ use crate::settings::*;
 use crate::storage::*;
 
 mod actions;
-mod diagnostics;
 mod find;
 mod driver;
 mod frame;
@@ -124,7 +123,8 @@ pub struct Browser {
     /// Last composed screen, used to draw the tap highlight without re-rendering.
     last_gray: Vec<u8>,
     /// Rows of the highlight shown by `press`, to be restored on the next frame.
-    pressed_rows: Option<(u32, u32)>,
+    /// The tap highlight on screen: its columns and rows, taken back by the next frame.
+    pressed_rows: Option<((u32, u32), (u32, u32))>,
     /// Receives a frame as soon as a navigation starts, so the address bar shows the new URL while the page loads.
     draw: Option<Box<dyn FnMut(Update)>>,
     /// The quick settings panel (dropped from the top edge) is open.
@@ -137,12 +137,6 @@ pub struct Browser {
     pending_nav: Option<String>,
     /// How many redirects are in progress, so a redirect loop stops after a few hops.
     redirect_depth: u8,
-    /// Results of the last diagnostics run, or `None` before the first run.
-    diagnostics: Option<Vec<crate::ui::Report>>,
-    /// The last DNS change made from the diagnostics page, shown above the checks.
-    fix_report: Option<crate::ui::Report>,
-    /// The keyboard is entering the SSH password (kept in memory only, never in a URL or the log).
-    password_entry: bool,
 }
 
 impl Browser {
@@ -215,9 +209,6 @@ impl Browser {
             device_status: DeviceStatus::unavailable(),
             pending_nav: None,
             redirect_depth: 0,
-            diagnostics: None,
-            fix_report: None,
-            password_entry: false,
         }
     }
 

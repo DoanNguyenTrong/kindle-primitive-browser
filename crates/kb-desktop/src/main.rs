@@ -30,6 +30,11 @@ impl DeviceControl for DemoDevice {
             wifi_state: "connected".into(),
             clock: "10:38".into(),
             date: "Mon 16 Nov".into(),
+            system: kb_app::Stats {
+                cpu: Some(12),
+                ram: Some((180, 512)),
+                storage: Some((1_100_000_000, 6_100_000_000)),
+            },
         }
     }
     fn set_brightness(&mut self, _level: u32) {}
@@ -107,7 +112,7 @@ fn main() -> io::Result<()> {
                 let y: f32 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
                 if let Some(u) = b.press(x, y) {
                     write(&u, &out);
-                    eprintln!("[press] highlight rows {:?}", u.rows);
+                    eprintln!("[press] highlight rows {:?} cols {:?}", u.rows, u.cols);
                 } else {
                     eprintln!("[press] nothing tappable there");
                 }

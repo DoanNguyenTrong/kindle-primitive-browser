@@ -139,11 +139,17 @@ impl Browser {
     /// The current screen as an update. Only the rows that changed are marked
     /// for refresh; the rest of the buffer is still complete.
     pub fn frame(&mut self) -> Update {
-        // The highlight drawn by `press` must be taken back to normal here.
-        if let Some((a, b)) = self.pressed_rows.take() {
-            self.touch(a, b, Wave::Fast);
-        }
-        let (rows, wave) = self.change.take().unwrap_or(((0, self.height), Wave::Text));
+        // The highlight drawn by `press` is taken back here. When nothing else changed, only the key's own
+        // columns go back to the panel; otherwise the highlight's rows join the change, across the full width.
+        let pressed = self.pressed_rows.take();
+        let (rows, wave, cols) = match (self.change.take(), pressed) {
+            (None, Some((cols, rows))) => (rows, Wave::Fast, cols),
+            (None, None) => ((0, self.height), Wave::Text, (0, self.width)),
+            (Some((rows, wave)), None) => (rows, wave, (0, self.width)),
+            (Some((rows, wave)), Some((_, (a, b)))) => {
+                ((rows.0.min(a), rows.1.max(b)), wave.max(Wave::Fast), (0, self.width))
+            }
+        };
         let mut gray = if self.keyboard {
             self.compose_keyboard()
         } else {
@@ -163,6 +169,7 @@ impl Browser {
             width: self.width,
             height: self.height,
             rows,
+            cols,
             wave,
         }
     }
@@ -349,9 +356,13 @@ impl Browser {
 
     /// The quick settings panel, rendered again only when a device value changes.
     pub(super) fn ensure_quick(&mut self) -> &mut Cached {
-        let key = format!("{:?}", self.device_status);
+        let on = ui::Switches {
+            night: self.settings.night,
+            images: self.settings.images,
+        };
+        let key = format!("{:?}{:?}", self.device_status, on);
         if self.quick_layer.as_ref().map_or(true, |c| c.key != key) {
-            let html = ui::quick_panel(&self.device_status);
+            let html = ui::quick_panel(&self.device_status, on);
             let mut c = self.render_layer(&html, "kb://chrome/", self.width, QUICK_H);
             c.key = key;
             self.quick_layer = Some(c);
@@ -443,7 +454,7 @@ impl Browser {
         if self.sheet_header.as_ref().map_or(true, |c| c.key != title) {
             // Only the menu has a control in its title strip (Exit). Other sheets close by a tap on
             // the page above them.
-            let controls = if sheet == Sheet::Menu { ui::find_button() + &ui::diagnostics_button() + &ui::exit_button() } else { String::new() };
+            let controls = if sheet == Sheet::Menu { ui::find_button() + &ui::exit_button() } else { String::new() };
             let html = ui::sheet_header(&title, &controls);
             let mut c = self.render_layer(&html, "kb://chrome/", self.width, SHEET_TITLE_H);
             c.key = title;

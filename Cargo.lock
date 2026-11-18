@@ -1040,25 +1040,26 @@ dependencies = [
 
 [[package]]
 name = "kb-app"
-version = "0.2.6"
+version = "0.2.16"
 dependencies = [
  "kb-engine",
  "kb-net",
- "kb-term",
  "png 0.17.16",
+ "primitive-keyboard",
+ "primitive-quick",
  "url",
 ]
 
 [[package]]
 name = "kb-desktop"
-version = "0.2.6"
+version = "0.2.16"
 dependencies = [
  "kb-app",
 ]
 
 [[package]]
 name = "kb-engine"
-version = "0.2.6"
+version = "0.2.16"
 dependencies = [
  "anyrender_vello_cpu",
  "blitz-dom",
@@ -1074,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "kb-js"
-version = "0.2.6"
+version = "0.2.16"
 dependencies = [
  "blitz-dom",
  "blitz-html",
@@ -1085,25 +1086,19 @@ dependencies = [
 
 [[package]]
 name = "kb-kindle"
-version = "0.2.6"
+version = "0.2.16"
 dependencies = [
  "kb-app",
  "libc",
+ "primitive-quick",
 ]
 
 [[package]]
 name = "kb-net"
-version = "0.2.6"
+version = "0.2.16"
 dependencies = [
  "blitz-traits",
  "ureq",
-]
-
-[[package]]
-name = "kb-term"
-version = "0.2.6"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -1547,6 +1542,17 @@ name = "precomputed-hash"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
+
+[[package]]
+name = "primitive-keyboard"
+version = "0.1.0"
+
+[[package]]
+name = "primitive-quick"
+version = "0.1.0"
+dependencies = [
+ "libc",
+]
 
 [[package]]
 name = "proc-macro2"

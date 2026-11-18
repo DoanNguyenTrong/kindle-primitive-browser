@@ -3,9 +3,9 @@
 #
 #   scripts/build-device.sh
 #
-# Every device build is a new patch version: 0.1.0 -> 0.1.1 -> 0.1.2, and so on. The version is
-# the workspace version in Cargo.toml and is shown in the menu title. The bump is undone if the build or the install fails, so a failed deploy does not
-# use up a version number.
+# Every device build is a new patch version: 0.1.0 -> 0.1.1 -> 0.1.2, and so on. The version is the workspace version
+# in Cargo.toml and is shown in the menu title. The bump is undone if the build or the install fails, so a failed deploy
+# does not use up a version number. Installs over SSH (deploy/install-ssh.sh) when the Kindle is on Wi-Fi, else over USB.
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -39,6 +39,12 @@ trap undo ERR
 cd "$ROOT"
 cargo build --release --workspace >/dev/null
 cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf >/dev/null
-sh deploy/install.sh target/armv7-unknown-linux-musleabihf/release/kb-kindle
+BIN=target/armv7-unknown-linux-musleabihf/release/kb-kindle
+# Over SSH when the Kindle is on Wi-Fi (or KINDLE_HOST is set); over USB only when the Kindle is mounted and no host is given.
+if [ -n "${KINDLE_HOST:-}" ] || [ ! -d "${KINDLE:-/Volumes/Kindle}/documents" ]; then
+    sh deploy/install-ssh.sh "$BIN"
+else
+    sh deploy/install.sh "$BIN"
+fi
 trap - ERR
 echo "deployed Primitive Browser v$next"
