@@ -328,7 +328,7 @@ pub fn display(
 
 /// One row of the quick settings panel: a level bar of 25 steps with − and + at its ends.
 /// Each step is a link (`kb:<action>:<level>`), so a tap sets that level.
-fn level_row(icon_name: &str, label: &str, action: &str, level: u32) -> String {
+fn level_row(shape: &primitive_quick::Icon, label: &str, action: &str, level: u32) -> String {
     let steps: String = (0..=LEVEL_MAX)
         .map(|n| {
             let on = if n <= level { " on" } else { "" };
@@ -339,7 +339,7 @@ fn level_row(icon_name: &str, label: &str, action: &str, level: u32) -> String {
     let up = (level + 1).min(LEVEL_MAX);
     format!(
         r#"<div class="qp-row"><div class="qp-head"><span class="qp-ico">{i}</span><span class="qp-label">{label}</span><span class="qp-value">{level}</span></div><div class="qp-levels"><a class="qp-nudge" href="kb:{action}:{down}" aria-label="{label} less">{minus}</a><div class="qp-bar">{steps}</div><a class="qp-nudge" href="kb:{action}:{up}" aria-label="{label} more">{plus}</a></div></div>"#,
-        i = icon(icon_name, 40),
+        i = shared_icon(shape, 40),
         minus = icon("minus", 36),
         plus = icon("plus", 36),
     )
@@ -371,47 +371,89 @@ pub fn battery_icon(level: u32, charging: bool) -> String {
     )
 }
 
-/// The quick settings panel that the Kindle draws from the top edge: the clock and battery, Wi-Fi,
-/// the brightness and warmth bars, and a handle to close it.
-pub fn quick_panel(s: &DeviceStatus) -> String {
+/// The switches on the panel's round buttons: whether each one is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Switches {
+    pub night: bool,
+    pub images: bool,
+    pub ssh: bool,
+}
+
+/// The quick settings panel, as the launcher's: the time and the status, round buttons, the brightness and warmth
+/// rows, the System figures (CPU, memory, storage), and a handle to swipe up. The icons and figures come from
+/// primitive-quick, which the launcher uses too.
+pub fn quick_panel(s: &DeviceStatus, on: Switches) -> String {
+    use primitive_quick::icons;
     let status = match s.battery {
         Some(p) => battery_icon(p, s.charging),
         None => String::new(),
     };
+    let buttons = [
+        round_button("Airplane", "kb:wifi", &icons::PLANE, !s.wifi_on),
+        round_button("Night", "kb:night", &icons::MOON, on.night),
+        round_button("Images", "kb:images", &icons::IMAGES, on.images),
+        round_button("SSH", "kb:ssh:toggle", &icons::SSH, on.ssh),
+        round_button("Settings", "kb:display", &icons::SETTINGS, false),
+    ]
+    .concat();
     let body = format!(
         r#"<div class="quick"><div class="qp-top"><div class="qp-time"><span class="qp-clock">{clock}</span><span class="qp-date">{date}</span></div><div class="qp-status"><a class="qp-wifi{off}" href="kb:wifi" aria-label="Wi-Fi {wifi_word}">{wi}</a>{status}</div></div>
+<div class="qp-buttons">{buttons}</div>
 {brightness}
 {warmth}
-<a class="qp-handle" href="kb:quickclose">{up}<span>Close</span></a></div>"#,
+{system}
+<a class="qp-handle" href="kb:quickclose">{up}<span>Swipe up to close</span></a></div>"#,
         clock = esc(&s.clock),
         date = esc(&s.date),
         off = if s.wifi_on { "" } else { " off" },
         wifi_word = if s.wifi_on { "on, tap to turn off" } else { "off, tap to turn on" },
         wi = icon(if s.wifi_on { "wifi" } else { "wifi-off" }, 44),
         status = status,
-        brightness = level_row("sun", "Brightness", "bright", s.brightness),
-        warmth = level_row("warm", "Warmth", "warm", s.warmth),
+        buttons = buttons,
+        brightness = level_row(&icons::SUN, "Brightness", "bright", s.brightness),
+        warmth = level_row(&icons::WARMTH, "Warmth", "warm", s.warmth),
+        system = system_section(&s.system),
         up = icon("chev-up", 32),
     );
-    let extra = ".quick{height:{QUICK_H}px;background:#fff;border-bottom:3px solid #111;padding:0;display:flex;flex-direction:column}\
-.qp-top{display:flex;align-items:center;justify-content:space-between;height:120px;padding:0 28px}\
-.qp-time{display:flex;flex-direction:column}\
-.qp-clock{font-size:52px;font-weight:bold;color:#111}\
-.qp-date{font-size:24px;color:#555}\
-.qp-status{display:flex;align-items:center;gap:26px}\
-.qp-wifi{display:flex;align-items:center;justify-content:center;width:64px;height:64px;color:#111;text-decoration:none;border-radius:32px}\
-.qp-wifi.off{color:#8a8a8a}\
-.qp-row{padding:12px 28px 4px}\
-.qp-head{display:flex;align-items:center;gap:14px;height:56px;color:#111;font-size:28px}\
-.qp-label{flex:1}\
-.qp-value{font-size:24px;color:#666;min-width:60px;text-align:right}\
-.qp-levels{display:flex;align-items:center;gap:10px;height:84px}\
-.qp-nudge{display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:2px solid #111;border-radius:36px;font-size:40px;color:#111;text-decoration:none}\
-.qp-bar{display:flex;align-items:stretch;gap:3px;flex:1;height:72px}\
-.qp-step{flex:1;height:72px;border:2px solid #bdbdbd;border-radius:6px;background:#fff;text-decoration:none}\
-.qp-step.on{background:#111;border-color:#111}\
-.qp-handle{display:flex;flex-direction:column;align-items:center;justify-content:center;height:72px;margin-top:auto;border-top:1px solid #d8d8d8;color:#111;text-decoration:none;font-size:22px;letter-spacing:1px}".replace("{QUICK_H}", &QUICK_H.to_string());
+    let extra = ".quick{height:{QUICK_H}px;background:#fff;border-bottom:3px solid #111;padding:0;display:flex;flex-direction:column}.qp-top{display:flex;align-items:center;justify-content:space-between;height:120px;padding:0 28px}.qp-time{display:flex;flex-direction:column}.qp-clock{font-size:52px;font-weight:bold;color:#111}.qp-date{font-size:24px;color:#555}.qp-status{display:flex;align-items:center;gap:26px}.qp-wifi{display:flex;align-items:center;justify-content:center;width:64px;height:64px;color:#111;text-decoration:none;border-radius:32px}.qp-wifi.off{color:#8a8a8a}.qp-buttons{display:flex;justify-content:space-around;height:150px;padding:8px 16px 0}.qb{display:flex;flex-direction:column;align-items:center;gap:8px;width:150px;color:#111;text-decoration:none}.qb-circle{display:flex;align-items:center;justify-content:center;width:84px;height:84px;border:2px solid #111;border-radius:42px}.qb.on .qb-circle{background:#111;color:#fff}.qb-label{font-size:22px}.qp-row{padding:12px 28px 4px}.qp-head{display:flex;align-items:center;gap:14px;height:56px;color:#111;font-size:28px}.qp-label{flex:1}.qp-value{font-size:24px;color:#666;min-width:60px;text-align:right}.qp-levels{display:flex;align-items:center;gap:10px;height:84px}.qp-nudge{display:flex;align-items:center;justify-content:center;width:72px;height:72px;border:2px solid #111;border-radius:36px;font-size:40px;color:#111;text-decoration:none}.qp-bar{display:flex;align-items:stretch;gap:3px;flex:1;height:72px}.qp-step{flex:1;height:72px;border:2px solid #bdbdbd;border-radius:6px;background:#fff;text-decoration:none}.qp-step.on{background:#111;border-color:#111}.qs-sys{padding:4px 28px 0}.qs-title{height:40px;font-size:24px;font-weight:bold;color:#111}.qs-row{display:flex;align-items:center;gap:14px;height:76px}.qs-ico{display:flex;width:40px}.qs-label{width:130px;font-size:26px;color:#111}.qs-bar{flex:1;height:26px;border:2px solid #111;border-radius:13px;overflow:hidden;background:#fff}.qs-fill{display:block;height:100%;background:#111}.qs-value{width:260px;text-align:right;font-size:24px;color:#666}.qp-handle{display:flex;flex-direction:column;align-items:center;justify-content:center;height:72px;margin-top:auto;border-top:1px solid #d8d8d8;color:#111;text-decoration:none;font-size:22px;letter-spacing:1px}".replace("{QUICK_H}", &QUICK_H.to_string());
     document("Quick settings", &body, &format!("{extra}{BATTERY_CSS}"))
+}
+
+/// A round button of the panel: its icon in a circle, filled while its switch is on, and its name under it.
+fn round_button(name: &str, href: &str, shape: &primitive_quick::Icon, on: bool) -> String {
+    format!(
+        r#"<a class="qb{c}" href="{href}" aria-label="{name}{state}"><span class="qb-circle">{svg}</span><span class="qb-label">{name}</span></a>"#,
+        c = if on { " on" } else { "" },
+        state = if on { ", on" } else { "" },
+        svg = shared_icon(shape, 40),
+    )
+}
+
+/// The System section: CPU, memory and storage, each with its icon, a bar for how full it is, and its value.
+fn system_section(stats: &primitive_quick::Stats) -> String {
+    let rows: String = stats
+        .rows()
+        .iter()
+        .map(|row| {
+            format!(
+                r#"<div class="qs-row"><span class="qs-ico">{ic}</span><span class="qs-label">{label}</span><span class="qs-bar"><span class="qs-fill" style="width:{w:.1}%"></span></span><span class="qs-value">{value}</span></div>"#,
+                ic = shared_icon(&row.icon, 36),
+                label = row.label,
+                w = row.fraction.unwrap_or(0.0) * 100.0,
+                value = esc(&row.value),
+            )
+        })
+        .collect();
+    format!(r#"<div class="qs-sys"><div class="qs-title">System</div>{rows}</div>"#)
+}
+
+/// A shared icon (primitive-quick's shape) as SVG: stroked paths are lines, filled paths are solid.
+fn shared_icon(shape: &primitive_quick::Icon, size: u32) -> String {
+    let stroke: String = shape.stroke.iter().map(|d| format!(r#"<path d="{d}"/>"#)).collect();
+    let fill: String = shape.fill.iter().map(|d| format!(r#"<path fill="currentColor" stroke="none" d="{d}"/>"#)).collect();
+    format!(
+        r#"<svg width="{size}" height="{size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 auto">{stroke}{fill}</svg>"#
+    )
 }
 
 /// Tab switcher: a grid of cards (two per row), the open tab marked, and a New tab card.
@@ -513,16 +555,17 @@ pub fn field_list(suggestions: &[(String, String, bool)]) -> String {
 
 /// Keyboard keys: rows from `keyboard_rows`, in a 16 px frame at the bottom.
 pub fn keyboard(rows: &[Vec<Key>], area_h: u32) -> String {
+    use primitive_keyboard::style;
     let mut out = String::new();
     for row in rows {
         let keys: String = row
             .iter()
             .map(|k| {
-                let size = if k.label.chars().count() > 1 { " sm" } else { "" };
                 format!(
-                    r#"<a class="k{c}{size}" style="flex:{w}" href="{h}">{l}</a>"#,
+                    r#"<a class="k{c}" style="flex:{w};font-size:{fs}px" href="{h}">{l}</a>"#,
                     c = if k.class.is_empty() { String::new() } else { format!(" {}", k.class) },
                     w = k.width,
+                    fs = style::label_size(&k.label),
                     h = esc(&k.href),
                     l = esc(&k.label),
                 )
@@ -530,16 +573,23 @@ pub fn keyboard(rows: &[Vec<Key>], area_h: u32) -> String {
             .collect();
         out.push_str(&format!(r#"<div class="krow">{keys}</div>"#));
     }
-    // Keys are 124 px tall on the portrait keyboard; a shorter area (landscape) shrinks them to fit.
-    let rows_n = rows.len().max(1) as u32;
-    let key_h = (area_h.saturating_sub(32 + 8 * rows_n) / rows_n).min(124);
+    // The heights and spacing are the shared keyboard's (the launcher's), so both apps lay out the same keys.
+    let key_h = style::key_height(area_h, rows.len() as u32);
+    let (ink, edge, fill, top) = (gray(style::INK_GRAY), gray(style::BORDER_GRAY), gray(style::FILL_GRAY), gray(style::TOP_LINE_GRAY));
+    let (pt, ps, pb, gap) = (style::PAD_TOP, style::PAD_SIDE, style::PAD_BOTTOM, style::GAP);
+    let (line, border, radius) = (style::TOP_LINE, style::BORDER, style::RADIUS);
     let extra = format!(
-        "body{{padding:14px 12px 18px;border-top:2px solid #e2e2e2;background:#fff}}\
-.krow{{display:flex;gap:8px;margin-bottom:8px}}\
-.k{{display:block;height:{key_h}px;line-height:{key_h}px;text-align:center;border:1px solid #bdbdbd;border-radius:12px;background:#f7f7f7;color:#111;font-size:48px;text-decoration:none}}\
-.k.sm{{font-size:30px}}.k.on,.k.go{{background:#111;color:#fff;border-color:#111}}"
+        "body{{padding:{pt}px {ps}px {pb}px;border-top:{line}px solid {top};background:#fff}}\
+.krow{{display:flex;gap:{gap}px;margin-bottom:{gap}px}}\
+.k{{display:block;height:{key_h}px;line-height:{key_h}px;text-align:center;border:{border}px solid {edge};border-radius:{radius}px;background:{fill};color:{ink};text-decoration:none}}\
+.k.on,.k.go{{background:{ink};color:#fff;border-color:{ink}}}"
     );
     document("Keyboard", &out, &extra)
+}
+
+/// A shared gray level as a CSS colour.
+fn gray(v: u8) -> String {
+    format!("#{v:02x}{v:02x}{v:02x}")
 }
 
 /// Keyboard layers from the layout rows (`Layer` decides which set).

@@ -4,6 +4,7 @@
 //! shows as unknown, and a change that fails leaves the panel as it was.
 
 use std::process::Command;
+use std::sync::Mutex;
 
 use kb_app::{DeviceControl, DeviceStatus, LEVEL_MAX};
 
@@ -17,6 +18,16 @@ const CHARGER_ONLINE_SYSFS: &str = crate::profile::ACTIVE.charger_online;
 
 /// Reads and sets the Kindle's frontlight, warmth, battery, Wi-Fi and clock.
 pub struct KindleDevice;
+
+/// The CPU meter keeps the last reading of /proc/stat, so the panel's CPU figure is the share since the panel was
+/// last opened (the first reading, at start-up, only primes it).
+static CPU_METER: Mutex<Option<primitive_quick::CpuMeter>> = Mutex::new(None);
+
+/// CPU, memory and storage of the device (storage is the user's partition).
+fn system_stats() -> primitive_quick::Stats {
+    let mut meter = CPU_METER.lock().unwrap_or_else(|e| e.into_inner());
+    primitive_quick::read(meter.get_or_insert_with(primitive_quick::CpuMeter::new), "/mnt/us")
+}
 
 /// Read an integer system property, or `None` when it is missing or not a number.
 fn get_int(service: &str, prop: &str) -> Option<u32> {
@@ -160,6 +171,7 @@ impl DeviceControl for KindleDevice {
             wifi_state: wifi_label(&wifi_state, wifi_on),
             clock,
             date,
+            system: system_stats(),
         }
     }
 

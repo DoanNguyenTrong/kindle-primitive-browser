@@ -6,7 +6,7 @@
 pub const LEVEL_MAX: u32 = 24;
 
 /// What the quick settings panel shows.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DeviceStatus {
     pub brightness: u32,
     pub warmth: u32,
@@ -19,6 +19,8 @@ pub struct DeviceStatus {
     pub clock: String,
     /// The local date, "Mon 16 Nov".
     pub date: String,
+    /// CPU, memory and storage: the panel's System section.
+    pub system: primitive_quick::Stats,
 }
 
 impl DeviceStatus {
@@ -33,6 +35,7 @@ impl DeviceStatus {
             wifi_state: String::new(),
             clock: "--:--".to_string(),
             date: String::new(),
+            system: primitive_quick::Stats::default(),
         }
     }
 }

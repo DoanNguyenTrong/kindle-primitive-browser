@@ -30,6 +30,11 @@ impl DeviceControl for DemoDevice {
             wifi_state: "connected".into(),
             clock: "10:38".into(),
             date: "Mon 16 Nov".into(),
+            system: kb_app::Stats {
+                cpu: Some(12),
+                ram: Some((180, 512)),
+                storage: Some((1_100_000_000, 6_100_000_000)),
+            },
         }
     }
     fn set_brightness(&mut self, _level: u32) {}

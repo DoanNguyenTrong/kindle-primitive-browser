@@ -356,9 +356,14 @@ impl Browser {
 
     /// The quick settings panel, rendered again only when a device value changes.
     pub(super) fn ensure_quick(&mut self) -> &mut Cached {
-        let key = format!("{:?}", self.device_status);
+        let on = ui::Switches {
+            night: self.settings.night,
+            images: self.settings.images,
+            ssh: super::diagnostics::ssh_running(),
+        };
+        let key = format!("{:?}{:?}", self.device_status, on);
         if self.quick_layer.as_ref().map_or(true, |c| c.key != key) {
-            let html = ui::quick_panel(&self.device_status);
+            let html = ui::quick_panel(&self.device_status, on);
             let mut c = self.render_layer(&html, "kb://chrome/", self.width, QUICK_H);
             c.key = key;
             self.quick_layer = Some(c);

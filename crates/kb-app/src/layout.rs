@@ -22,7 +22,7 @@ pub const MENU_H: u32 = 780;
 pub const SHEET_TITLE_H: u32 = 72;
 
 /// Height of the quick settings panel that drops from the top edge.
-pub const QUICK_H: u32 = 680;
+pub const QUICK_H: u32 = 940;
 
 pub(crate) const MAX_DOC_BYTES: u64 = 6 * 1024 * 1024;
 
