@@ -60,7 +60,6 @@ impl Browser {
     }
 
     pub(super) fn enter_keyboard(&mut self) {
-        self.password_entry = false;
         self.find_entry = false;
         self.masked = false;
         self.keyboard = true;
@@ -152,7 +151,6 @@ impl Browser {
                     self.keyboard = false;
                     self.input_target = None;
                     self.masked = false;
-                    self.password_entry = false;
                     self.find_entry = false;
                     self.typed.clear();
                     self.touch(0, self.height, Wave::Text);
@@ -161,12 +159,6 @@ impl Browser {
                 "kb:go" => {
                     let text: String = self.typed.iter().collect();
                     self.keyboard = false;
-                    if self.password_entry {
-                        self.password_entry = false;
-                        self.typed.clear();
-                        self.set_ssh_password(&text);
-                        return;
-                    }
                     if self.find_entry {
                         self.find_entry = false;
                         self.run_find(&text);
@@ -207,7 +199,7 @@ impl Browser {
     /// `SUGGESTION_LIMIT`; the list scrolls, so a long history stays reachable.
     pub(super) fn refresh_suggestions(&mut self) {
         const SUGGESTION_LIMIT: usize = 60;
-        if self.password_entry || self.find_entry {
+        if self.find_entry {
             self.suggestions.clear();
             return;
         }
@@ -236,7 +228,7 @@ impl Browser {
     /// The address bar layer, shown above the suggestions while the keyboard is open.
     pub(super) fn ensure_field(&mut self) -> &mut Cached {
         // A password is shown as stars, and its text never becomes part of the cache key.
-        let (shown, key): (Vec<char>, String) = if self.password_entry || self.masked {
+        let (shown, key): (Vec<char>, String) = if self.masked {
             let stars = vec!['*'; self.typed.len()];
             let key = format!("pw:{}|{}|{}", self.typed.len(), self.caret, self.select_all);
             (stars, key)
@@ -266,11 +258,9 @@ impl Browser {
         self.suggest.as_mut().expect("suggestion layer")
     }
 
-    /// What the Go key says: Done ends a page field (its form is not submitted), Set ends the SSH password.
+    /// What the Go key says: Done ends a page field (its form is not submitted), Find ends the find bar.
     pub(super) fn go_label(&self) -> &'static str {
-        if self.password_entry {
-            "Set"
-        } else if self.find_entry {
+        if self.find_entry {
             "Find"
         } else if self.input_target.is_some() {
             "Done"

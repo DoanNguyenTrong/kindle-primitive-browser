@@ -107,7 +107,7 @@ Community reports vary by model and firmware. Amazon publishes no official list 
 2. **Copy** the `browser` and `documents` folders onto your jailbroken Kindle, next to each other on its root.
 3. **Open** *Primitive Browser* from the Kindle library.
 
-The browser ships its own FBInk and Dropbear (see `assets/device/README.md`); nothing else needs to be installed on the Kindle. The full steps for
+The browser ships its own FBInk (see `assets/device/README.md`); nothing else needs to be installed on the Kindle. The full steps for
 macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
 
 ## Highlights

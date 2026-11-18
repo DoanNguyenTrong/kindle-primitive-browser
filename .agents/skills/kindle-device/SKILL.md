@@ -38,7 +38,8 @@ Its files: `deploy/install-ssh.sh` (installer), `deploy/Browser.sh` (launcher), 
 ## Access over SSH
 
 - SSH server: dropbear on port 2222 (`ssh -p 2222 root@<ip>`). Find the IP with `ifconfig wlan0`. The server is
-  started by the app (its Diagnostics page) or by KOReader. Two servers on one port is a common mistake: the
+  the launcher's: it is started from the launcher's Settings > SSH & DNS (or its quick settings), with the launcher's
+  own Dropbear in `/mnt/us/launcher/ssh/`. KOReader can also start one. Two servers on one port is a common mistake: the
   second fails with "Address family not supported" or "Address already in use", and a stop that only checks
   its own pid file does nothing. Check the port: `grep -i ':08AE ' /proc/net/tcp` (0x08AE = 2222, state `0A`).
 - **Firewall**: the Kindle drops incoming connections by default (ping gets no reply, and a TCP connect times
@@ -47,7 +48,8 @@ Its files: `deploy/install-ssh.sh` (installer), `deploy/Browser.sh` (launcher), 
   ACCEPT` (delete first with `-D` so starting twice does not add it twice). KOReader's SSH plugin does the same.
   The rules last until the Kindle restarts, so a rule left by KOReader can make SSH work until the next restart.
   Check with `iptables -L INPUT -n | grep 2222`.
-- Host key: copy `/mnt/us/koreader/settings/SSH/dropbear_ed25519_host_key` if the app's own copy is missing,
+- Host key: `/mnt/us/launcher/ssh/dropbear_ed25519_host_key`. The launcher's install copies it from the browser's or
+  KOReader's copy if the launcher has none,
   so the Mac's known-hosts entry stays valid. Fingerprint check: `ssh-keyscan -p 2222 <ip> | ssh-keygen -lf -`.
 - **Password**: the user supplies it. Never write it into the repository, code, commit messages, logs or chat
   output. Keep it in an expect helper outside the repo (for example `/tmp/*.exp`), reading it from the user.

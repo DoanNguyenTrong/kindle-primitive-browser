@@ -9,6 +9,5 @@ primitive-keyboard = { path = "../../tools/crates/primitive-keyboard" }
 primitive-quick = { path = "../../tools/crates/primitive-quick" }
 kb-engine = { path = "../kb-engine" }
 kb-net = { path = "../kb-net" }
-kb-term = { path = "../kb-term" }
 url = "2"
 png.workspace = true

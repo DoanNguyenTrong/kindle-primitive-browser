@@ -6,6 +6,10 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Removed
+- The SSH server (Dropbear and its zlib) and `deploy/set-dns.sh`. The launcher ships and runs its own Dropbear, and its DNS script does public DNS.
+- Diagnostics (the menu's Diagnostics button and `kbp://diagnostics`), with its checks, Check SSH, Start and Stop SSH, Set SSH password and public DNS. They moved to the launcher's Settings > SSH & DNS, which also has the quick settings' SSH switch. The browser's quick settings have no SSH switch: Airplane, Night, Images and Settings remain.
+
 ### Added
 - The licence texts for the device tools (FBInk under GPL-3.0, Dropbear, zlib) are in `assets/device/licenses/`, with the source references for the FBInk and Dropbear binaries in `assets/device/README.md`. The release package and the device install carry them in `browser/bin/licenses/`.
 - Start SSH shows the root password: the one last set with Set SSH password (saved in `browser/ssh/password.txt`), or the device default before one is set.
