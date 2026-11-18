@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/kb-net", "crates/kb-engine", "crates/kb-js", "crates/kb-app", "crates/kb-desktop", "crates/kb-kindle", "crates/kb-term"]
+members = ["crates/kb-net", "crates/kb-engine", "crates/kb-js", "crates/kb-app", "crates/kb-desktop", "crates/kb-kindle"]
 exclude = ["spike"]
 
 [workspace.package]

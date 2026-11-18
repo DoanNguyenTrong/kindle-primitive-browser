@@ -1102,13 +1102,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "kb-term"
-version = "0.2.16"
-dependencies = [
- "libc",
-]
-
-[[package]]
 name = "keyboard-types"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -303,8 +303,6 @@ hardware test on the Oasis 3, and a note of the result in the pull request.
 
 Copyright (C) 2026 Doan Nguyen. Released under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Earlier releases, up to 0.1.18, were published under the MIT licence.
 
-The shell engine in `crates/kb-term` is ported from KOReader's terminal plugin (`plugins/terminal.koplugin`, copyright the KOReader contributors, AGPL-3.0). The port is written in Rust; see the header of `crates/kb-term/src/lib.rs`.
-
 ## Security
 
 Report security problems privately to the maintainer rather than in a public issue.

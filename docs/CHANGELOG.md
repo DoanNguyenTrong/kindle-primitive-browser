@@ -7,6 +7,7 @@ All notable changes to this project are recorded here. The format follows
 ## [Unreleased]
 
 ### Removed
+- The shell engine (`crates/kb-term`, ported from KOReader's terminal plugin) moved to Primitive Terminal, which is its own app.
 - The SSH server (Dropbear and its zlib) and `deploy/set-dns.sh`. The launcher ships and runs its own Dropbear, and its DNS script does public DNS.
 - Diagnostics (the menu's Diagnostics button and `kbp://diagnostics`), with its checks, Check SSH, Start and Stop SSH, Set SSH password and public DNS. They moved to the launcher's Settings > SSH & DNS, which also has the quick settings' SSH switch. The browser's quick settings have no SSH switch: Airplane, Night, Images and Settings remain.
 
