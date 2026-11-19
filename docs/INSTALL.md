@@ -36,7 +36,7 @@ If the values differ, download the package again.
 Unzip `primitive-browser-<version>.zip`. You get one folder, `primitive-browser-<version>/`, with:
 
 ```text
-browser/        the browser program, its icon and the start page
+browser/        the browser program, its icon, and other resources
 documents/      the launcher that shows Primitive Browser in the Kindle library
 INSTALL.md      this guide
 ```
@@ -66,15 +66,15 @@ from the source tree can use `KINDLE=<path to the Kindle> sh deploy/install.sh` 
 Eject the Kindle from your computer (safely remove it) before you unplug it. Then on the Kindle, open
 the library. **Primitive Browser** appears there with its icon. Open it.
 
-The first launch starts at the page in `browser/start.txt` (Hacker News by default). Change that file
-on the Kindle to choose a different start page.
+The Store build opens the browser's home page. The legacy USB archive includes a `browser/start.txt` that opens
+Hacker News. Edit `browser/start.txt` on the Kindle if you want your own start page.
 
 ## Update
 
-Copy only these three files from the new package to the Kindle, replacing the old ones:
-`browser/kb-kindle`, `browser/icon.png` and `documents/Primitive Browser.sh`. **Do not copy
-`browser/start.txt`**, which is your start page. Your data is also kept: `browser/data/` (cookies,
-bookmarks, cache, saved pages) and the log.
+Use **Updates** in Primitive Store for apps you installed through the Store.
+
+For a manual USB update, copy the Browser package's program, resources, and library entry into the existing folders.
+Keep your existing `browser/start.txt`, `browser/data/` (cookies, bookmarks, cache, and saved pages), and log.
 
 ## Uninstall
 
