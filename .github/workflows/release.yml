@@ -1,59 +1,22 @@
 name: Release
 
-# Runs when a version tag such as v0.1.17 is pushed. See docs/VERSIONING.md.
 on:
   push:
     tags: ["v*"]
 
-permissions:
-  contents: write
-
 jobs:
   release:
-    name: Build and publish the release package
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: The tag must match Cargo.toml
-        run: |
-          TAG=${GITHUB_REF_NAME#v}
-          VERSION=$(python3 -c "import re; print(re.search(r'^version = \"([0-9]+\.[0-9]+\.[0-9]+)\"', open('Cargo.toml').read(), re.M).group(1))")
-          if [ "$TAG" != "$VERSION" ]; then
-            echo "tag $GITHUB_REF_NAME does not match Cargo.toml version $VERSION" >&2
-            exit 1
-          fi
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: armv7-unknown-linux-musleabihf
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install zig, cargo-zigbuild and zip
-        run: |
-          sudo apt-get install -y zip
-          python3 -m pip install ziglang
-          cargo install cargo-zigbuild --locked
-
-      - name: Test, build the device binary and package
-        run: |
-          cargo test --workspace
-          cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf
-          sh scripts/package-release.sh
-
-      - name: The store package (the same files, with a manifest; for Primitive Store)
-        run: |
-          sh scripts/stage.sh armhf
-          git clone --depth 1 https://github.com/DoanNguyenTrong/kindle-primitive-build.git .build
-          python3 -m pip install jsonschema==4.26.0
-          python3 -I .build/scripts/package.py --id primitive-browser --dir browser \
-            --version "${GITHUB_REF_NAME#v}" --arch armhf --stage build/stage \
-            --license LICENSE --install docs/INSTALL.md --firmware-min 5.16.3 --out dist
-
-      - name: Publish the GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/*
-          generate_release_notes: true
+    # Pin the shared workflow to @v1 once that release is approved and exists.
+    uses: DoanNguyenTrong/kindle-primitive-build/.github/workflows/package.yml@main
+    permissions:
+      contents: write
+    with:
+      id: primitive-browser
+      dir: browser
+      binary-crate: kb-kindle
+      arches: armhf
+      firmware-min: "5.16.3"
+      install-file: docs/INSTALL.md
+      changelog-file: docs/CHANGELOG.md
+      docs-licence-file: LICENSE-DOCS
+      legacy-usb: true
