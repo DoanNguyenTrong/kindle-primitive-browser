@@ -43,6 +43,15 @@ jobs:
           cargo zigbuild --release -p kb-kindle --target armv7-unknown-linux-musleabihf
           sh scripts/package-release.sh
 
+      - name: The store package (the same files, with a manifest; for Primitive Store)
+        run: |
+          sh scripts/stage.sh armhf
+          git clone --depth 1 https://github.com/DoanNguyenTrong/kindle-primitive-build.git .build
+          python3 -m pip install jsonschema==4.26.0
+          python3 -I .build/scripts/package.py --id primitive-browser --dir browser \
+            --version "${GITHUB_REF_NAME#v}" --arch armhf --stage build/stage \
+            --license LICENSE --install docs/INSTALL.md --firmware-min 5.16.3 --out dist
+
       - name: Publish the GitHub release
         uses: softprops/action-gh-release@v2
         with:
