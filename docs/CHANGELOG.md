@@ -2,9 +2,14 @@
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
-[Semantic Versioning](https://semver.org/). The workspace version is `0.2.17`; the latest release tag is `v0.2.16`.
+[Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
+
+## [0.2.18] - 2026-11-19
+
+- Package Browser for both ARMHF and ARMEL. The ARMEL build uses a static FBInk helper.
+- Include the software and documentation licenses in both Store package variants.
 
 ## [0.2.17] - 2026-11-19
 
