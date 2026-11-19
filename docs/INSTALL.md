@@ -6,12 +6,13 @@ macOS, Linux and Windows. For building from source, see the [README](../README.m
 **Supported today: Kindle Oasis 3 (firmware 5.18.2), jailbroken.** Other Kindles are not supported
 yet. See [device support](DEVICES.md). Installing on an unsupported model is at your own risk.
 
-## Install with Primitive Store
+## Install with Store
 
-Open Primitive Store, tap **Refresh**, then select **Primitive Browser** under **Apps**. Tap **Get** and follow the
-onscreen instructions. After installation, use **Open** on the product page or select Primitive Browser from the launcher.
+After [setting up PrimitiveOS](https://github.com/DoanNguyenTrong/kindle-primitive-launcher/blob/main/docs/INSTALL.md#first-time-setup-over-usb),
+open **Store** from Primitive Launcher and tap **Refresh**. Select **Primitive Browser** under **Apps**, then tap
+**Get**. After installation, use **Open** on the product page or select Primitive Browser from the Launcher grid.
 
-The steps below install the USB package. For a developer installation over SSH, see the [README](../README.md).
+For a standalone USB setup, use the steps below. For a developer installation over SSH, see the [README](../README.md).
 
 ## What you need
 
@@ -71,7 +72,7 @@ Hacker News. Edit `browser/start.txt` on the Kindle if you want your own start p
 
 ## Update
 
-Use **Updates** in Primitive Store for apps you installed through the Store.
+Use **Updates** in Store for apps you installed through Store.
 
 For a manual USB update, copy the Browser package's program, resources, and library entry into the existing folders.
 Keep your existing `browser/start.txt`, `browser/data/` (cookies, bookmarks, cache, and saved pages), and log.

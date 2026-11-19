@@ -22,7 +22,8 @@ Written in Rust. It runs on the Kindle itself, and the screen is grayscale e-ink
 
 ---
 
-Primitive Browser lays out pages with the [Blitz](https://github.com/DioxusLabs/blitz) HTML and CSS
+Primitive Browser is the web browser for [PrimitiveOS](https://github.com/DoanNguyenTrong/kindle-primitive).
+It lays out pages with the [Blitz](https://github.com/DioxusLabs/blitz) HTML and CSS
 engine (flexbox and grid included), runs a JavaScript subset in QuickJS, and paints the result in
 8-bit grayscale for the e-ink panel. Everything happens on the Kindle. You do not need a computer or a
 rendering server while you browse.
@@ -103,12 +104,9 @@ Community reports vary by model and firmware. Amazon publishes no official list 
 
 ## Quick start
 
-1. **Download** `primitive-browser-<version>.zip` from the [latest release](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases/latest).
-2. **Copy** the `browser` and `documents` folders onto your jailbroken Kindle, next to each other on its root.
-3. **Open** *Primitive Browser* from the Kindle library.
-
-The browser ships its own FBInk (see `assets/device/README.md`); nothing else needs to be installed on the Kindle. The full steps for
-macOS, Linux and Windows are in the [install guide](docs/INSTALL.md).
+After setting up PrimitiveOS, open **Store** from Primitive Launcher. Choose **Primitive Browser** under **Apps**
+and tap **Get**. Open the browser from the Launcher grid. The [install guide](docs/INSTALL.md) also covers the
+standalone USB package for macOS, Linux and Windows.
 
 ## Highlights
 
