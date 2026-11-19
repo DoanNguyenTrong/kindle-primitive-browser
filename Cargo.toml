@@ -23,8 +23,7 @@ libc = "0.2"
 opt-level = 3
 debug = false
 
-# rquickjs-sys ships pre-generated bindings for the gnu ARMv7 target only. The C
-# struct layouts are identical for musl, so the gnu file is reused (see vendor/README.md).
+# The vendored rquickjs-sys reuses its ARMv7 bindings on musl (see vendor/README.md).
 [patch.crates-io]
 rquickjs-sys = { path = "vendor/rquickjs-sys-0.14.0" }
 # blitz-dom: guards for stylesheets and messages that arrive after a node was removed (see vendor/README.md).

@@ -6,6 +6,13 @@ macOS, Linux and Windows. For building from source, see the [README](../README.m
 **Supported today: Kindle Oasis 3 (firmware 5.18.2), jailbroken.** Other Kindles are not supported
 yet. See [device support](DEVICES.md). Installing on an unsupported model is at your own risk.
 
+## Install with Primitive Store
+
+Open Primitive Store, tap **Refresh**, then select **Primitive Browser** under **Apps**. Tap **Get** and follow the
+onscreen instructions. After installation, use **Open** on the product page or select Primitive Browser from the launcher.
+
+The steps below install the USB package. For a developer installation over SSH, see the [README](../README.md).
+
 ## What you need
 
 1. **A jailbroken Kindle** with a USB data cable.
