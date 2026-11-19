@@ -2,9 +2,18 @@
 
 All notable changes to this project are recorded here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Versions follow
-[Semantic Versioning](https://semver.org/). The workspace version is `0.2.16`, released as tag `v0.2.16`.
+[Semantic Versioning](https://semver.org/). The workspace version is `0.2.17`; the latest release tag is `v0.2.16`.
 
 ## [Unreleased]
+
+## [0.2.17] - 2026-11-19
+
+### Changed
+
+- Licence: the code is under the PolyForm Noncommercial License 1.0.0, and the documentation and pictures under
+  CC BY-NC-SA 4.0. Releases up to 0.2.16 stay under AGPL-3.0 (and up to 0.1.18 under MIT). The release package
+  carries both licence files.
+- The project skills moved to the shared `doannt-kindle/.agents/skills` folder.
 
 ## [0.2.16] - 2026-11-18
 

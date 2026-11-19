@@ -4,9 +4,9 @@ members = ["crates/kb-net", "crates/kb-engine", "crates/kb-js", "crates/kb-app",
 exclude = ["spike"]
 
 [workspace.package]
-version = "0.2.16"
+version = "0.2.17"
 edition = "2021"
-license = "AGPL-3.0-only"
+license = "PolyForm-Noncommercial-1.0.0"
 
 [workspace.dependencies]
 blitz-html = "=0.3.0-beta.4"

@@ -10,7 +10,7 @@ Written in Rust. It runs on the Kindle itself, and the screen is grayscale e-ink
 [![CI](https://img.shields.io/github/actions/workflow/status/DoanNguyenTrong/kindle-primitive-browser/ci.yml?branch=main&label=CI)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/DoanNguyenTrong/kindle-primitive-browser?label=release)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases)
 [![Tag](https://img.shields.io/github/v/tag/DoanNguyenTrong/kindle-primitive-browser?label=tag)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/tags)
-[![Licence: AGPL-3.0](https://img.shields.io/github/license/DoanNguyenTrong/kindle-primitive-browser)](LICENSE)
+[![Licence: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![Stars](https://img.shields.io/github/stars/DoanNguyenTrong/kindle-primitive-browser?style=social)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/stargazers)
 
 [**Download**](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases/latest) ·
@@ -301,7 +301,20 @@ hardware test on the Oasis 3, and a note of the result in the pull request.
 
 ## Licence
 
-Copyright (C) 2026 Doan Nguyen. Released under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0). Earlier releases, up to 0.1.18, were published under the MIT licence.
+Copyright (C) 2026 Doan Nguyen.
+
+- **Code** (`crates/`, `deploy/`, `scripts/`, `tests/`): the [PolyForm Noncommercial License 1.0.0](LICENSE). You may
+  use, change and share it for any non-commercial purpose. Commercial use needs the author's written permission.
+- **Documentation and pictures** (this README, `docs/`, the icons and pictures in `assets/`):
+  [CC BY-NC-SA 4.0](LICENSE-DOCS).
+- **Earlier versions**: releases 0.1.19 to **0.2.16** were published under the GNU Affero General Public License v3.0
+  (AGPL-3.0), and releases up to 0.1.18 under the MIT licence; those releases stay available under them. The new
+  licences apply from the next version.
+
+Third-party parts keep their own licences: the shared crates in `tools/` (AGPL-3.0 or PolyForm Noncommercial 1.0.0, taken
+here under PolyForm Noncommercial), the vendored crates in `vendor/` and the Rust dependencies under their own licences
+(among them MPL-2.0 for the Stylo CSS engine, whose files stay under MPL-2.0), FBInk under GPL-3.0
+(`assets/device/licenses/`), and the Noto Sans fonts under the SIL Open Font License.
 
 ## Security
 

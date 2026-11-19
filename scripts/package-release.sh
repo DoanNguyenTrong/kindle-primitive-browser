@@ -51,6 +51,8 @@ awk -v icon="$ICON_LINE" '{ print } /^# Author:/ { print icon }' deploy/Browser.
 chmod 700 "$STAGE/$NAME/documents/Primitive Browser.sh"
 
 cp docs/INSTALL.md "$STAGE/$NAME/INSTALL.md"
+cp LICENSE "$STAGE/$NAME/LICENSE"
+cp LICENSE-DOCS "$STAGE/$NAME/LICENSE-DOCS"
 
 mkdir -p dist
 rm -f "dist/$NAME.zip" "dist/$NAME.zip.sha256"
