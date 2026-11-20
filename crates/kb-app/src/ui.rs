@@ -257,11 +257,12 @@ pub fn exit_button() -> String {
 
 /// Display sheet: text size steps, page width, and day or night. Changes apply at once and the
 /// sheet stays open, so the reader can compare settings on the page.
-/// The Display sheet. `scripts` is the script setting of the current site (`None` on browser pages).
+/// The Display sheet. `scripts` is the script setting of the current site (`None` on browser pages). `night` is
+/// `None` under Primitive Launcher, where the theme is the system's and the sheet has no Day and Night.
 pub fn display(
     text_pct: u32,
     width: u32,
-    night: bool,
+    night: Option<bool>,
     scripts: Option<bool>,
     page_wave: &str,
     ui_wave: &str,
@@ -320,10 +321,15 @@ pub fn display(
 <div class="section">PAGE WIDTH</div>
 <div class="seg">{widths}</div>
 <div class="note">Narrow suits phone layouts. Medium fits this screen. Wide shows more text per line.</div>
-<div class="section">THEME</div>
-<div class="seg">{day}{dark}</div>{site}<div class="section">PAGE REFRESH</div><div class="seg">{page_waves}</div><div class="section">BARS AND TAPS REFRESH</div><div class="seg">{ui_waves}</div>{solid}{lines}{refresh}{dither}</div>"#,
-        day = seg("kb:nightoff", "Day", !night),
-        dark = seg("kb:nighton", "Night", night),
+{theme}{site}<div class="section">PAGE REFRESH</div><div class="seg">{page_waves}</div><div class="section">BARS AND TAPS REFRESH</div><div class="seg">{ui_waves}</div>{solid}{lines}{refresh}{dither}</div>"#,
+        theme = match night {
+            Some(night) => format!(
+                "<div class=\"section\">THEME</div>\n<div class=\"seg\">{}{}</div>",
+                seg("kb:nightoff", "Day", !night),
+                seg("kb:nighton", "Night", night)
+            ),
+            None => String::new(),
+        },
         site = site,
         page_waves = page_waves,
         ui_waves = ui_waves,

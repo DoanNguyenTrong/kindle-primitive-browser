@@ -138,8 +138,8 @@ impl Browser {
 
     /// The current screen as an update. Only the rows that changed are marked
     /// for refresh; the rest of the buffer is still complete.
-    /// Under Primitive Launcher the bars follow the system theme (`Some(dark)`); standalone (`None`) they follow Night,
-    /// as before. Night itself darkens the page only when the bars follow the system.
+    /// Under Primitive Launcher the whole browser (bars and pages) follows the system theme (`Some(dark)`), and the
+    /// Display sheet has no Day and Night. Standalone (`None`) it follows Night, as before.
     pub fn set_system_theme(&mut self, dark: Option<bool>) {
         if self.system_dark != dark {
             self.system_dark = dark;
@@ -150,25 +150,6 @@ impl Browser {
     /// Draw the whole screen again with a flash: after the system's own screens, or when the theme changed.
     pub fn redraw_all(&mut self) {
         self.change = Some(((0, self.height), Wave::Flash));
-    }
-
-    /// The rows of the browser's own bars and sheets (its chrome) in this frame.
-    fn bar_rows(&self) -> Vec<(u32, u32)> {
-        let h = self.height;
-        if self.keyboard {
-            return vec![(0, h)];
-        }
-        let mut rows = Vec::new();
-        if self.sheet.is_some() {
-            rows.push((h - MENU_H, h));
-        } else if self.chrome {
-            rows.push((0, TOP_H));
-            rows.push((h - BOT_H, h));
-        }
-        if self.quick {
-            rows.push((0, QUICK_H));
-        }
-        rows
     }
 
     pub fn frame(&mut self) -> Update {
@@ -188,23 +169,13 @@ impl Browser {
         } else {
             self.compose_browse()
         };
-        // Inverted: near-white backgrounds become black, and very dark levels snap to pure black so the background
-        // is fully dark rather than a faint grey. The page follows Night; the bars follow the system theme under
-        // Primitive Launcher, and Night standalone.
-        let page_dark = self.settings.night;
-        let bars_dark = self.system_dark.unwrap_or(page_dark);
-        if page_dark || bars_dark {
-            let bars = self.bar_rows();
-            let w = self.width as usize;
-            for (y, row) in gray.chunks_mut(w).enumerate() {
-                let y = y as u32;
-                let on_bar = bars.iter().any(|&(a, b)| y >= a && y < b);
-                if (on_bar && bars_dark) || (!on_bar && page_dark) {
-                    for px in row.iter_mut() {
-                        let inverted = 255 - *px;
-                        *px = if inverted < 16 { 0 } else { inverted };
-                    }
-                }
+        // Inverted: near-white page backgrounds become black, and very dark levels snap to pure black so the
+        // background is fully dark rather than a faint grey. Under Primitive Launcher the system theme decides;
+        // standalone, Night does.
+        if self.system_dark.unwrap_or(self.settings.night) {
+            for px in gray.iter_mut() {
+                let inverted = 255 - *px;
+                *px = if inverted < 16 { 0 } else { inverted };
             }
         }
         self.last_gray = gray.clone();
@@ -466,7 +437,8 @@ impl Browser {
                 Sheet::Display => ui::display(
                     self.settings.text_pct,
                     self.settings.page_width,
-                    self.settings.night,
+                    // Under Primitive Launcher the theme is the system's: no Day and Night here.
+                    self.system_dark.is_none().then_some(self.settings.night),
                     (self.page_is_web).then(|| !crate::storage::scripts_off(&super::loading::host_of(&self.url))),
                     &self.settings.page_wave,
                     &self.settings.ui_wave,
