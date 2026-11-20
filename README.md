@@ -7,13 +7,13 @@
 **A web browser for jailbroken Kindle e-readers.**
 Written in Rust. It runs on the Kindle itself, and the screen is grayscale e-ink.
 
-[![CI](https://img.shields.io/github/actions/workflow/status/DoanNguyenTrong/kindle-primitive-browser/ci.yml?branch=main&label=CI)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/DoanNguyenTrong/kindle-primitive-browser?label=release)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases)
-[![Tag](https://img.shields.io/github/v/tag/DoanNguyenTrong/kindle-primitive-browser?label=tag)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/tags)
+[![CI](https://img.shields.io/github/actions/workflow/status/PrimitiveOS/kindle-primitive-browser/ci.yml?branch=main&label=CI)](https://github.com/PrimitiveOS/kindle-primitive-browser/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/PrimitiveOS/kindle-primitive-browser?label=release)](https://github.com/PrimitiveOS/kindle-primitive-browser/releases)
+[![Tag](https://img.shields.io/github/v/tag/PrimitiveOS/kindle-primitive-browser?label=tag)](https://github.com/PrimitiveOS/kindle-primitive-browser/tags)
 [![Licence: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/licence-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
-[![Stars](https://img.shields.io/github/stars/DoanNguyenTrong/kindle-primitive-browser?style=social)](https://github.com/DoanNguyenTrong/kindle-primitive-browser/stargazers)
+[![Stars](https://img.shields.io/github/stars/PrimitiveOS/kindle-primitive-browser?style=social)](https://github.com/PrimitiveOS/kindle-primitive-browser/stargazers)
 
-[**Download**](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases/latest) ·
+[**Download**](https://github.com/PrimitiveOS/kindle-primitive-browser/releases/latest) ·
 [**Install guide**](docs/INSTALL.md) ·
 [**Device support**](docs/DEVICES.md) ·
 [**Changelog**](docs/CHANGELOG.md)
@@ -22,7 +22,7 @@ Written in Rust. It runs on the Kindle itself, and the screen is grayscale e-ink
 
 ---
 
-Primitive Browser is the web browser for [PrimitiveOS](https://github.com/DoanNguyenTrong/kindle-primitive).
+Primitive Browser is the web browser for [PrimitiveOS](https://github.com/PrimitiveOS/kindle-primitive).
 It lays out pages with the [Blitz](https://github.com/DioxusLabs/blitz) HTML and CSS
 engine (flexbox and grid included), runs a JavaScript subset in QuickJS, and paints the result in
 8-bit grayscale for the e-ink panel. Everything happens on the Kindle. You do not need a computer or a

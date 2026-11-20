@@ -8,7 +8,7 @@ yet. See [device support](DEVICES.md). Installing on an unsupported model is at 
 
 ## Install with Store
 
-After [setting up PrimitiveOS](https://github.com/DoanNguyenTrong/kindle-primitive-launcher/blob/main/docs/INSTALL.md#first-time-setup-over-usb),
+After [setting up PrimitiveOS](https://github.com/PrimitiveOS/kindle-primitive-launcher/blob/main/docs/INSTALL.md#first-time-setup-over-usb),
 open **Store** from Primitive Launcher and tap **Refresh**. Select **Primitive Browser** under **Apps**, then tap
 **Get**. After installation, use **Open** on the product page or select Primitive Browser from the Launcher grid.
 
@@ -20,7 +20,7 @@ For a standalone USB setup, use the steps below. For a developer installation ov
 2. **FBInk** is installed with the browser at `/mnt/us/browser/bin/fbink`. `deploy/install-ssh.sh` copies it from
    `assets/device/armv7/`. The browser uses it to draw the screen when in-process drawing is not used.
 3. **The release package**, `primitive-browser-<version>.zip`, from the
-   [Releases](https://github.com/DoanNguyenTrong/kindle-primitive-browser/releases) page, and its `.sha256` file.
+   [Releases](https://github.com/PrimitiveOS/kindle-primitive-browser/releases) page, and its `.sha256` file.
 
 ## 1. Check the download
 
