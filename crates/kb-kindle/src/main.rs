@@ -820,6 +820,13 @@ fn main() {
                 }
             }
         };
+        // A redraw the launcher asked for while the browser was frozen comes before the event that waited behind
+        // the freeze, so that event is never drawn in the old theme first.
+        if REDRAW.swap(false, Ordering::Relaxed) {
+            log("redraw requested by the launcher");
+            b.set_system_theme(system_dark());
+            b.redraw_all();
+        }
         let t_action = Instant::now();
         idle = SOON;
         log(&format!("event {ev:?}"));
