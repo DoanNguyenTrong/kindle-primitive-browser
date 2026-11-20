@@ -118,6 +118,8 @@ pub struct Browser {
     visits: Vec<(String, String)>,
     /// Pending screen change: union of changed rows and the strongest waveform.
     change: Option<((u32, u32), Wave)>,
+    /// Under Primitive Launcher the bars follow the system theme (`Some(dark)`); standalone (`None`) they follow Night.
+    system_dark: Option<bool>,
     images_seen: usize,
     last_image_refresh: Instant,
     /// Last composed screen, used to draw the tap highlight without re-rendering.
@@ -198,6 +200,7 @@ impl Browser {
             bookmarks: read_pairs(&data_file("bookmarks.tsv")),
             visits: read_pairs(&data_file("history.tsv")),
             change: None,
+            system_dark: None,
             images_seen: 0,
             last_image_refresh: Instant::now(),
             last_gray: Vec::new(),

@@ -138,6 +138,39 @@ impl Browser {
 
     /// The current screen as an update. Only the rows that changed are marked
     /// for refresh; the rest of the buffer is still complete.
+    /// Under Primitive Launcher the bars follow the system theme (`Some(dark)`); standalone (`None`) they follow Night,
+    /// as before. Night itself darkens the page only when the bars follow the system.
+    pub fn set_system_theme(&mut self, dark: Option<bool>) {
+        if self.system_dark != dark {
+            self.system_dark = dark;
+            self.redraw_all();
+        }
+    }
+
+    /// Draw the whole screen again with a flash: after the system's own screens, or when the theme changed.
+    pub fn redraw_all(&mut self) {
+        self.change = Some(((0, self.height), Wave::Flash));
+    }
+
+    /// The rows of the browser's own bars and sheets (its chrome) in this frame.
+    fn bar_rows(&self) -> Vec<(u32, u32)> {
+        let h = self.height;
+        if self.keyboard {
+            return vec![(0, h)];
+        }
+        let mut rows = Vec::new();
+        if self.sheet.is_some() {
+            rows.push((h - MENU_H, h));
+        } else if self.chrome {
+            rows.push((0, TOP_H));
+            rows.push((h - BOT_H, h));
+        }
+        if self.quick {
+            rows.push((0, QUICK_H));
+        }
+        rows
+    }
+
     pub fn frame(&mut self) -> Update {
         // The highlight drawn by `press` is taken back here. When nothing else changed, only the key's own
         // columns go back to the panel; otherwise the highlight's rows join the change, across the full width.
@@ -155,12 +188,23 @@ impl Browser {
         } else {
             self.compose_browse()
         };
-        if self.settings.night {
-            // Inverted: near-white page backgrounds become black, and very dark levels snap to pure black so the
-            // background is fully dark rather than a faint grey.
-            for px in gray.iter_mut() {
-                let inverted = 255 - *px;
-                *px = if inverted < 16 { 0 } else { inverted };
+        // Inverted: near-white backgrounds become black, and very dark levels snap to pure black so the background
+        // is fully dark rather than a faint grey. The page follows Night; the bars follow the system theme under
+        // Primitive Launcher, and Night standalone.
+        let page_dark = self.settings.night;
+        let bars_dark = self.system_dark.unwrap_or(page_dark);
+        if page_dark || bars_dark {
+            let bars = self.bar_rows();
+            let w = self.width as usize;
+            for (y, row) in gray.chunks_mut(w).enumerate() {
+                let y = y as u32;
+                let on_bar = bars.iter().any(|&(a, b)| y >= a && y < b);
+                if (on_bar && bars_dark) || (!on_bar && page_dark) {
+                    for px in row.iter_mut() {
+                        let inverted = 255 - *px;
+                        *px = if inverted < 16 { 0 } else { inverted };
+                    }
+                }
             }
         }
         self.last_gray = gray.clone();

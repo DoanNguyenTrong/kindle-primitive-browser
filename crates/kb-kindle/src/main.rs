@@ -17,7 +17,7 @@ use std::{
     process::Command,
     rc::Rc,
     sync::{
-        atomic::{AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc::{channel, Receiver, RecvTimeoutError, Sender},
     },
     thread,
@@ -176,6 +176,26 @@ enum Ev {
 /// A touch that starts this close to the top edge (device pixels) is an edge swipe.
 const EDGE_H: f32 = 40.0;
 
+/// Run by Primitive Launcher (`PRIMITIVE_LAUNCHER=1`): the launcher is the system layer. Its quick settings, sleep and
+/// theme are the system's, so the browser leaves the top-edge swipe to it and follows the system theme.
+static UNDER_LAUNCHER: AtomicBool = AtomicBool::new(false);
+/// Set by SIGUSR1: the launcher asks for the whole screen again (after a wake, or a theme change).
+static REDRAW: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn on_redraw(_: libc::c_int) {
+    REDRAW.store(true, Ordering::Relaxed);
+}
+
+/// The system theme under Primitive Launcher (`dark_mode` in its settings), or `None` standalone.
+fn system_dark() -> Option<bool> {
+    if !UNDER_LAUNCHER.load(Ordering::Relaxed) {
+        return None;
+    }
+    let dir = std::env::var("KL_DIR").unwrap_or_else(|_| "/mnt/us/launcher".into());
+    let text = fs::read_to_string(format!("{dir}/settings.txt")).unwrap_or_default();
+    Some(text.lines().any(|l| l.trim() == "dark_mode=on"))
+}
+
 fn log(msg: &str) {
     eprintln!("[kb] {msg}");
 }
@@ -253,8 +273,9 @@ fn touch_loop(path: String, tx: Sender<Ev>) {
                         } else if still {
                             Some(Ev::LongTap(end.0, end.1))
                         } else if sy < EDGE_H && dy > 120.0 && dy.abs() > dx.abs() * 1.5 {
-                            // A swipe down from the very top edge opens quick settings.
-                            Some(Ev::QuickSettings)
+                            // A swipe down from the very top edge opens quick settings: the browser's own, or under
+                            // Primitive Launcher the system's (the launcher sees the same swipe).
+                            if UNDER_LAUNCHER.load(Ordering::Relaxed) { None } else { Some(Ev::QuickSettings) }
                         } else if on_bar && dx.abs() > 180.0 && dx.abs() > dy.abs() * 1.5 {
                             // Swipe along the address bar moves between tabs.
                             Some(Ev::TabStep(if dx > 0.0 { -1 } else { 1 }))
@@ -669,6 +690,12 @@ fn install_crash_log() {
 fn main() {
     install_crash_log();
     log("start");
+    if std::env::var("PRIMITIVE_LAUNCHER").as_deref() == Ok("1") {
+        UNDER_LAUNCHER.store(true, Ordering::Relaxed);
+        // SAFETY: the handler only stores to an atomic, which is safe in a signal handler.
+        unsafe { libc::signal(libc::SIGUSR1, on_redraw as *const () as libc::sighandler_t) };
+        log("under Primitive Launcher: the system layer owns quick settings, sleep and the theme");
+    }
     let start = fs::read_to_string(format!("{DIR}/start.txt"))
         .ok()
         .map(|s| s.trim().to_string())
@@ -704,6 +731,7 @@ fn main() {
     log(&format!("turn at start: rota {turn} (framework {framework:?}, framebuffer {framebuffer:?})"));
     thread::spawn(display_turn_watch);
     let mut b = Browser::new(NATIVE_W, NATIVE_H);
+    b.set_system_theme(system_dark());
     b.set_pump(Box::new(move |fraction, label| {
         let mut s = pump_state.borrow_mut();
         let mut interrupted = false;
@@ -742,6 +770,13 @@ fn main() {
     let mut idle = IDLE;
     let mut tuning = Tuning::default();
     loop {
+        if REDRAW.swap(false, Ordering::Relaxed) {
+            log("redraw requested by the launcher");
+            b.set_system_theme(system_dark());
+            b.redraw_all();
+            let u = b.frame();
+            shared.borrow_mut().display.show(&u);
+        }
         tuning.reload();
         shared.borrow_mut().display.direct = tuning.direct;
         // The waveforms the reader chose in its Display sheet (they can change between events).
