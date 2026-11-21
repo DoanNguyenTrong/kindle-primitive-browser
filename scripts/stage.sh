@@ -44,6 +44,7 @@ if [ "$ARCH" = armel ]; then
 fi
 # The library entry carries its icon in the header, after the Author line.
 ICON_LINE="# Icon: data:image/png;base64,$(base64 < assets/primitive-icon.png | tr -d '\n')"
-awk -v icon="$ICON_LINE" '{ print } /^# Author:/ { print icon }' deploy/Browser.sh > "$STAGE/documents/Primitive Browser.sh"
+ICON_DARK_LINE="# IconDark: data:image/png;base64,$(base64 < assets/primitive-icon-dark.png | tr -d '\n')"
+awk -v icon="$ICON_LINE" -v icon_dark="$ICON_DARK_LINE" '{ print } /^# Author:/ { print icon; print icon_dark }' deploy/Browser.sh > "$STAGE/documents/Primitive Browser.sh"
 chmod 755 "$STAGE/documents/Primitive Browser.sh"
 echo "staged $STAGE"
