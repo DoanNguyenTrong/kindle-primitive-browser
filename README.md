@@ -129,7 +129,7 @@ standalone USB package for macOS, Linux and Windows.
 | Kindle Oasis 3 (1264 × 1680, firmware 5.18.2) | ✅ Verified on hardware |
 | Other Kindle models | 🛠️ Not supported yet. See [device support](docs/DEVICES.md) for the plan. |
 
-**Current version: 0.2.18.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
+**Current version: 0.2.21.** Versioning and tags are in [versioning](docs/VERSIONING.md). Hardware
 observations are in [device notes](docs/device-notes.md).
 
 ## Limits
@@ -302,6 +302,11 @@ spike/              Early experiments (not part of the build)
 
 Issues and pull requests are welcome. Read [contributing](CONTRIBUTING.md) first. Device changes need a
 hardware test on the Oasis 3, and a note of the result in the pull request.
+
+## Downloads
+
+**112 downloads** from Store, as of 2026-11-21. Store shows the same count on the app page.
+The count is GitHub downloads of this app's release packages, from the [Store catalog](https://primitiveos.github.io/kindle-primitive-catalog/v1/index.json).
 
 ## Licence
 
