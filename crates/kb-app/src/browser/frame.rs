@@ -143,13 +143,19 @@ impl Browser {
     pub fn set_system_theme(&mut self, dark: Option<bool>) {
         if self.system_dark != dark {
             self.system_dark = dark;
-            self.redraw_all();
+            self.redraw_all_calm();
         }
     }
 
     /// Draw the whole screen again with a flash: after the system's own screens, or when the theme changed.
     pub fn redraw_all(&mut self) {
         self.change = Some(((0, self.height), Wave::Flash));
+    }
+
+    /// Draw the whole screen again without a flash: the launcher's redraw after a theme switch. The launcher has just
+    /// flashed the screen (showing it in the new theme), and a second flash would show the old theme for a moment.
+    pub fn redraw_all_calm(&mut self) {
+        self.change = Some(((0, self.height), Wave::Text));
     }
 
     pub fn frame(&mut self) -> Update {

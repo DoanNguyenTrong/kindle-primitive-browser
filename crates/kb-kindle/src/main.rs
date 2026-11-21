@@ -773,7 +773,7 @@ fn main() {
         if REDRAW.swap(false, Ordering::Relaxed) {
             log("redraw requested by the launcher");
             b.set_system_theme(system_dark());
-            b.redraw_all();
+            b.redraw_all_calm();
             let u = b.frame();
             shared.borrow_mut().display.show(&u);
         }
@@ -825,7 +825,7 @@ fn main() {
         if REDRAW.swap(false, Ordering::Relaxed) {
             log("redraw requested by the launcher");
             b.set_system_theme(system_dark());
-            b.redraw_all();
+            b.redraw_all_calm();
         }
         let t_action = Instant::now();
         idle = SOON;
