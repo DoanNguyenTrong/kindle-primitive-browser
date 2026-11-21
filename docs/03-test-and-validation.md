@@ -216,9 +216,25 @@ block a release.
 - **D-14** Follow a chapter/section link (including an encoded Vietnamese ID), use Back/Forward,
   then reload a URL with a fragment. Evidence: destination headings and address in logs.
 - **D-15** Change Narrow/Medium/Wide on a responsive page; confirm the expected layout and
-  readable controls, then repeat in reading view and Night mode. Evidence: photos.
+  readable controls, then repeat in reading view and Night mode (standalone) or dark mode
+  (under Primitive Launcher). Evidence: photos.
 - **D-16** Saved fixture opens with the network unavailable; identify any missing assets
   separately from the saved HTML. Evidence: photo, Wi-Fi state, and logs.
+
+### Under Primitive Launcher (the system layer)
+
+- **D-17 (must)** Press the power button: the lock screen is the launcher's sleep picture.
+  Wake: the browser's screen comes back as it was, without a restart. Evidence: photo; no
+  second `start` line in the log.
+- **D-18 (must)** Swipe down from the top edge: the launcher's quick settings open over the
+  page, not the browser's own panel. Close them: the page comes back without a full flash.
+  Evidence: photo, log.
+- **D-19 (must)** Switch dark mode in the launcher's quick settings over a page: one flash
+  when the theme changes, then the whole browser (bars and page) in the new theme with no
+  second flash. The Display sheet has no Day and Night. Evidence: photos; `redraw requested by
+  the launcher` in the log.
+- **D-20** Tap Power in quick settings, then Cancel: the power menu is drawn over the browser,
+  and Cancel returns to it. Evidence: photo.
 
 ### Performance (record numbers)
 

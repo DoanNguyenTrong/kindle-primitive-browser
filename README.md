@@ -116,11 +116,11 @@ standalone USB package for macOS, Linux and Windows.
 | 🗂️ **Tabs and history** | Each tab keeps its own history and scroll position, and tabs come back after a restart. |
 | 🔀 **Redirects** | Script and meta-refresh redirects are followed, so search-result links reach their target. |
 | ⌨️ **Keyboard** | An on-screen keyboard with a caret, Shift, symbols and address suggestions. |
-| 📖 **Reading** | A reading view, text size from 80% to 200%, day and night, and an images switch. |
+| 📖 **Reading** | A reading view, text size from 80% to 200%, and an images switch. Under Primitive Launcher the whole browser follows the system's dark mode; opened alone, it has Day and Night. |
 | 🔖 **Library** | Bookmarks you can reorder, recent visits, saved HTML pages and folding Home sections. |
-| 🔋 **Device controls** | Quick settings from the top edge: frontlight, warmth, battery, Wi-Fi and the clock. |
+| 🔋 **Device controls** | Quick settings from the top edge: the launcher's under Primitive Launcher, or the browser's own (frontlight, warmth, battery, Wi-Fi and the clock) when opened alone. |
 | 📴 **Offline friendly** | A 200 MiB disk cache with offline fallback, and saved pages you can read later. |
-| ♻️ **Gentle on the Kindle** | Returns to the Kindle library on exit, and restores the screen if the browser stops. |
+| ♻️ **Gentle on the Kindle** | Returns to Primitive Launcher, or to the Kindle library when opened alone, on exit, and restores the screen if the browser stops. |
 
 ## Status
 
@@ -205,11 +205,17 @@ These decisions can be reviewed if the goal changes.
   at the bottom has Back, Forward, tabs, bookmark and Menu.
 - **Scrolling.** Swipe vertically to scroll. Swipe horizontally for Back and Forward. Swipe along the
   address bar to switch tabs. The page-turn buttons move one screen.
-- **Quick settings.** Swipe down from the top edge.
+- **Quick settings.** Swipe down from the top edge. Under Primitive Launcher this opens the launcher's quick
+  settings over the browser; opened alone, the browser's own panel.
+- **Under Primitive Launcher.** The launcher is the system layer: it keeps the power button, sleep, the lock
+  screen, quick settings and the theme. The whole browser, bars and pages, follows the system's light or dark mode,
+  and the Display sheet has no Day and Night. After a theme switch in quick settings the browser redraws in the new
+  theme without a second flash. Opened from the Kindle library without the launcher, Day and Night work as before.
 - **Links.** Long-press a link to open it in a new tab.
 - **Menu.** Reload, reading view, Display, Images, bookmarks, saved pages, Home, New tab, Clear cache,
   Clear history and **Exit**.
-- **Exit.** Saves the tabs, restores the Kindle's status bar and opens the library.
+- **Exit.** Saves the tabs. Under Primitive Launcher it returns to the launcher's home screen; opened alone, it
+  restores the Kindle's status bar and opens the library.
 - **Start page.** A new session opens `browser/start.txt`. Saved tabs take priority.
 - **Fallback.** If the library shows a blank screen after Exit, create an empty file named
   `stop-framework` in the `browser` folder on the Kindle. The launcher then stops and restarts the

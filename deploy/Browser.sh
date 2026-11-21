@@ -2,6 +2,7 @@
 # Name: Primitive Browser
 # Author: Primitive AI
 # DontUseFBInk
+# Wake: redraw
 #
 # Library launcher. Runs the browser over the Kindle's own UI: the status bar is hidden while
 # the framework and window manager keep running. Exit restores the status bar and opens the library.
@@ -26,6 +27,9 @@ log() { echo "[launcher $(date '+%H:%M:%S')] $*" >> "$LOG"; }
 # Set by Primitive Launcher, which has already stopped the framework and owns the screen. Then this script
 # does not touch the stock UI at all: no stop, no restore, no library call (see the functions below).
 LAUNCHED=${PRIMITIVE_LAUNCHER:-0}
+# Under the launcher, SIGUSR1 to this app's process group asks the browser to redraw; this script and its helpers
+# ignore it (a shell ends on it otherwise), and the browser sets its own handler.
+[ "$LAUNCHED" = 1 ] && trap '' USR1
 
 # Keep the log small on the Kindle's flash: keep the last ~200 KB.
 if [ -f "$LOG" ] && [ "$(wc -c < "$LOG")" -gt 204800 ]; then

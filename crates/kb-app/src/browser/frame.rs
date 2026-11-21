@@ -138,6 +138,26 @@ impl Browser {
 
     /// The current screen as an update. Only the rows that changed are marked
     /// for refresh; the rest of the buffer is still complete.
+    /// Under Primitive Launcher the whole browser (bars and pages) follows the system theme (`Some(dark)`), and the
+    /// Display sheet has no Day and Night. Standalone (`None`) it follows Night, as before.
+    pub fn set_system_theme(&mut self, dark: Option<bool>) {
+        if self.system_dark != dark {
+            self.system_dark = dark;
+            self.redraw_all_calm();
+        }
+    }
+
+    /// Draw the whole screen again with a flash: after the system's own screens, or when the theme changed.
+    pub fn redraw_all(&mut self) {
+        self.change = Some(((0, self.height), Wave::Flash));
+    }
+
+    /// Draw the whole screen again without a flash: the launcher's redraw after a theme switch. The launcher has just
+    /// flashed the screen (showing it in the new theme), and a second flash would show the old theme for a moment.
+    pub fn redraw_all_calm(&mut self) {
+        self.change = Some(((0, self.height), Wave::Text));
+    }
+
     pub fn frame(&mut self) -> Update {
         // The highlight drawn by `press` is taken back here. When nothing else changed, only the key's own
         // columns go back to the panel; otherwise the highlight's rows join the change, across the full width.
@@ -155,9 +175,10 @@ impl Browser {
         } else {
             self.compose_browse()
         };
-        if self.settings.night {
-            // Inverted: near-white page backgrounds become black, and very dark levels snap to pure black so the
-            // background is fully dark rather than a faint grey.
+        // Inverted: near-white page backgrounds become black, and very dark levels snap to pure black so the
+        // background is fully dark rather than a faint grey. Under Primitive Launcher the system theme decides;
+        // standalone, Night does.
+        if self.system_dark.unwrap_or(self.settings.night) {
             for px in gray.iter_mut() {
                 let inverted = 255 - *px;
                 *px = if inverted < 16 { 0 } else { inverted };
@@ -422,7 +443,8 @@ impl Browser {
                 Sheet::Display => ui::display(
                     self.settings.text_pct,
                     self.settings.page_width,
-                    self.settings.night,
+                    // Under Primitive Launcher the theme is the system's: no Day and Night here.
+                    self.system_dark.is_none().then_some(self.settings.night),
                     (self.page_is_web).then(|| !crate::storage::scripts_off(&super::loading::host_of(&self.url))),
                     &self.settings.page_wave,
                     &self.settings.ui_wave,

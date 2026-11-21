@@ -38,12 +38,27 @@ rediscovered. Each entry says where it was seen.
 - **The status bar** is the framework's `default_status_bar` pillow. It is hidden while the browser
   runs. Its content on this device has not been checked.
 
+## Under Primitive Launcher (the system layer)
+
+Checked on the Kindle with the owner on 2026-11-21 (umbrella `docs/system-upgrade-plan.md`):
+
+- **The power button did nothing in the browser** while powerd's `preventScreenSaver` was 1. The
+  launcher's supervisor now sets it to 0 at start; the browser never touches it.
+- **Sleep and wake** (launcher 0.6.2, browser 0.2.20): the lock screen is the sleep wallpaper, and
+  wake brings the browser back.
+- **Quick settings over the browser** (launcher 0.6.2, browser 0.2.20): light, Airplane, Power then
+  Cancel, and the theme. The browser stays behind the panel and comes back intact.
+- **No second flash after a theme switch** (browser 0.2.21): the launcher's redraw draws the whole
+  screen with the page waveform. Before, the browser's own GC16 flash showed the old theme for a
+  moment.
+
 ## Tried and dropped
 
 - **Native status bar and swipe-down panel over the browser** (v0.1.13, flag file `show-status-bar`:
   the launcher did not hide the status bar). Result on the device: no status bar was visible, and a
   swipe down from the top edge did not open the Kindle's panel while the browser ran. The browser's own
-  quick settings panel stays in use. The experiment's code was removed.
+  quick settings panel stays in use when the browser is opened alone; under Primitive Launcher the launcher's quick
+  settings open instead. The experiment's code was removed.
 
 ## Gyro (not used now)
 
