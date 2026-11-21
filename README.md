@@ -7,6 +7,7 @@
 **A web browser for jailbroken Kindle e-readers.**
 Written in Rust. It runs on the Kindle itself, and the screen is grayscale e-ink.
 
+[![Store downloads](https://img.shields.io/endpoint?url=https%3A%2F%2Fprimitiveos.github.io%2Fkindle-primitive-catalog%2Fv1%2Fbadges%2Fprimitive-browser.json)](https://primitiveos.github.io/kindle-primitive-catalog/v1/index.json) 
 [![CI](https://img.shields.io/github/actions/workflow/status/PrimitiveOS/kindle-primitive-browser/ci.yml?branch=main&label=CI)](https://github.com/PrimitiveOS/kindle-primitive-browser/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/PrimitiveOS/kindle-primitive-browser?label=release)](https://github.com/PrimitiveOS/kindle-primitive-browser/releases)
 [![Tag](https://img.shields.io/github/v/tag/PrimitiveOS/kindle-primitive-browser?label=tag)](https://github.com/PrimitiveOS/kindle-primitive-browser/tags)
@@ -305,8 +306,7 @@ hardware test on the Oasis 3, and a note of the result in the pull request.
 
 ## Downloads
 
-**112 downloads** from Store, as of 2026-11-21. Store shows the same count on the app page.
-The count is GitHub downloads of this app's release packages, from the [Store catalog](https://primitiveos.github.io/kindle-primitive-catalog/v1/index.json).
+The badge at the top shows the number of Store downloads. It counts GitHub downloads of this app's release packages, across all versions and architectures, and is refreshed daily from the [Store catalog](https://primitiveos.github.io/kindle-primitive-catalog/v1/index.json).
 
 ## Licence
 
