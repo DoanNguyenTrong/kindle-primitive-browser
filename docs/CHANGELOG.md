@@ -6,6 +6,21 @@ All notable changes to this project are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Under Primitive Launcher the browser follows the system layer. The library entry declares `# Wake: redraw`, and
+  the browser draws its whole screen again when the launcher asks (`SIGUSR1`). `Browser.sh` ignores the signal in
+  its own shell.
+
+### Changed
+
+- Under Primitive Launcher the whole browser, bars and pages, follows the system's light or dark mode, and the
+  Display sheet has no Day and Night. Opened alone, Night works as before.
+- Under Primitive Launcher the swipe down from the top edge opens the launcher's quick settings. The browser's own
+  panel opens only when the browser is opened alone.
+- The launcher's redraw after a theme switch draws the whole screen with the page waveform, without a flash. A
+  second GC16 flash showed the old theme for a moment.
+
 ## [0.2.18] - 2026-11-19
 
 - Package Browser for both ARMHF and ARMEL. The ARMEL build uses a static FBInk helper.

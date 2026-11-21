@@ -44,7 +44,11 @@ state; gray shading alone is insufficient. Long titles must not overlap close co
 Use immediate, static tap feedback; no decorative animation or blinking caret. Reuse cached
 layers and refresh the changed rows. Pages and sheets use GL16 for text quality; short
 keyboard/progress feedback may use DU. The device driver periodically requests GC16 to clear
-ghosting. Day/Night changes request a full flash. These policies still need device review.
+ghosting. Standalone, Day/Night changes request a full flash. Under Primitive Launcher the
+theme is the system's: after a theme switch in its quick settings, or any redraw the
+launcher asks for (`SIGUSR1`), the browser draws the whole screen with the page waveform and
+no flash, because the launcher has already flashed once. These policies still need device
+review.
 
 Show a useful plain-language error and a reachable recovery action. Keep loading progress
 visible without painting each arriving image; current image refreshes are throttled to

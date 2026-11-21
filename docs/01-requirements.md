@@ -52,8 +52,8 @@ v0.1 device observations are in the changelog; they do not validate the current 
 | FR-8 | New/switch/close tabs and tab switcher. | Desktop verified; closing the final tab resets to Home. Inactive tabs store navigation metadata; sessions are checkpointed in `session.tsv` and resumed after restart. Crash recovery uses the last written checkpoint; live DOM state is not persisted. |
 | FR-9 | Address/search input with caret, suggestions, Shift and symbols. | Desktop verified. Suggestions come from bookmarks and recent visits. |
 | FR-10 | Bookmarks, recent history, saved pages. | Persistent lists; bookmark ordering/removal and folding Home sections implemented. One default bookmark is seeded once. Saves are HTML-only. |
-| FR-11 | Reading view and night mode. | Implemented; reading view survives live-cache restoration/reflow. Extraction can choose the wrong block. |
-| FR-12 | Display settings. | Text steps 80–200%; Narrow/Medium/Wide; Day/Night; settings persist. |
+| FR-11 | Reading view and night mode. | Implemented; reading view survives live-cache restoration/reflow. Extraction can choose the wrong block. Under Primitive Launcher the system's dark mode replaces Night. |
+| FR-12 | Display settings. | Text steps 80–200%; Narrow/Medium/Wide; Day/Night (standalone only: under Primitive Launcher the sheet has no theme section); settings persist. |
 | FR-13 | Notices, progress and recoverable errors. | Implemented; Menu/Display/Tabs use pinned dismissal controls. Device quality pending. |
 | FR-14 | Host-list ad/tracker blocking. | Sub-resource host checks unit-tested; this is a small built-in list. |
 | FR-15 | Kindle lifecycle, watchdog and bounded logs. | Launcher harness passes; actual firmware behavior pending. |

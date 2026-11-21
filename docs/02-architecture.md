@@ -139,7 +139,7 @@ Root: `$KB_DATA` on the computer, `/mnt/us/browser/data` on the device.
 | `history.tsv` | Up to 300 visited pages, newest first | after each web load |
 | `saved.tsv` and `saved/<key>.html` | Offline copies and their index | on Save |
 | `session.tsv` | Active tab, URLs, per-tab history and scroll positions | after page loads, tab closes, and Exit |
-| `settings.tsv` | Text size, page width, night mode, Images, folded Home sections | on change |
+| `settings.tsv` | Text size, page width, night mode (used standalone only), Images, folded Home sections | on change |
 | `defaults_v2` | Marker: default bookmarks already added | once |
 
 Device-only files in `/mnt/us/browser/`: `kb-kindle` (binary), `start.txt` (start page),
@@ -167,6 +167,32 @@ Orientation polling prefers `com.lab126.winmgr accelerometer` (`U`/`D`) and reta
 an optional fallback; both values are logged. The recorded device build does not export
 `currentRota` from `fbink -e`, so the framework is the usable source there. The browser clears
 without requesting an extra exit flash before the framework draws the library.
+
+### Under Primitive Launcher (the system layer)
+
+Primitive Launcher starts the entry with `PRIMITIVE_LAUNCHER=1` and stays running while the
+browser is open. It owns the power button, sleep and wake, the lock screen, quick settings, the
+power menu and the theme
+([system architecture](https://github.com/PrimitiveOS/kindle-primitive/blob/main/docs/system-architecture.md)).
+`Browser.sh` then leaves the Kindle's own UI alone: no framework stop, no status bar change, no
+library call on exit.
+
+- **Entry.** `deploy/Browser.sh` declares `# Wake: redraw` in its first ten lines and, under the
+  launcher, ignores `SIGUSR1` in its own shell (`trap '' USR1`). The browser sets its own handler
+  (`kb-kindle`, `on_redraw`).
+- **Redraw.** `SIGUSR1` is the launcher's request for the whole screen. The loop takes it before
+  any event that waited while the browser was frozen under quick settings: it reads the theme
+  again (`set_system_theme`) and draws the whole screen with the page waveform, without a flash
+  (`redraw_all_calm`). The launcher has just flashed the screen for a theme switch, and a second
+  flash would show the old theme for a moment.
+- **Theme.** The whole browser, bars and pages, follows `dark_mode` in
+  `/mnt/us/launcher/settings.txt` (`KL_DIR` if set). The Display sheet has no Day and Night, and
+  the `night` value in `settings.tsv` is kept for standalone use.
+- **Quick settings.** The swipe down from the top edge is the launcher's. The browser ignores it
+  and never opens its own panel.
+- **Sleep.** The browser has no sleep or screensaver code: the launcher draws the sleep picture
+  and puts the browser's screen back on wake. Without the launcher, sleep is left to the Kindle,
+  as before.
 
 [Device notes](device-notes.md) record the observed startup/rotation behavior, native touch
 coordinates, status-bar handling, and library return timings. Whole-process-group termination
@@ -241,7 +267,7 @@ re-exports the API the drivers use. `Browser` is defined in `browser/mod.rs`; ea
 | `browser/session.rs` | Session text codec, checkpoint writes, and startup resume |
 | `browser/tabs.rs` | Tabs: switching, creating, closing; each tab keeps its own history, scroll and source |
 | `browser/input.rs` | Taps, long presses, scrolling, the press highlight, hit testing for bars, sheets, keyboard and page |
-| `browser/actions.rs` | Actions named by `kb:` links: menu, Display settings (text size, width, day or night), toolbar |
+| `browser/actions.rs` | Actions named by `kb:` links: menu, Display settings (text size, width, day or night when standalone), toolbar |
 | `browser/library.rs` | Bookmarks, visit history, saved pages |
 | `browser/keyboard.rs` | On-screen keyboard: key layers, typing, caret, address suggestions |
 | `browser/frame.rs` | Composing the screen: bars, sheets, notices, cached layers, the notice timer, PNG output |
@@ -253,7 +279,7 @@ re-exports the API the drivers use. `Browser` is defined in `browser/mod.rs`; ea
 | `html.rs` | Escaping, and the page-level CSS added from the settings |
 | `addr.rs` | Typed input to URL, URL splitting, same-document comparison |
 | `layout.rs` | Layout constants in device pixels, and notice placement |
-| `ui.rs` | The stylesheet and the HTML for every screen the browser draws itself (§2.6), including the quick settings panel |
+| `ui.rs` | The stylesheet and the HTML for every screen the browser draws itself (§2.6), including the quick settings panel (standalone) |
 | `device.rs` | `DeviceControl` trait and `DeviceStatus`: the device-agnostic data behind the quick settings panel; `NoDevice` for the desktop |
 
 Each module starts with a `//!` line that states its job. Tests sit beside the code they check.
