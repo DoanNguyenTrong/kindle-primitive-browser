@@ -45,9 +45,8 @@ cp assets/device/README.md "$STAGE/$NAME/browser/bin/README.md"
 mkdir -p "$STAGE/$NAME/browser/bin/licenses"
 cp assets/device/licenses/*.txt "$STAGE/$NAME/browser/bin/licenses/"
 
-# The launcher carries its icon in the header, as install.sh writes it.
-ICON_LINE="# Icon: data:image/png;base64,$(base64 < assets/primitive-launcher-icon.png | tr -d '\n')"
-awk -v icon="$ICON_LINE" '{ print } /^# Author:/ { print icon }' deploy/Browser.sh > "$STAGE/$NAME/documents/Primitive Browser.sh"
+# The library entry carries its icon, light and dark, in the header (scripts/browser-entry.sh).
+sh scripts/browser-entry.sh deploy/Browser.sh "$STAGE/$NAME/documents/Primitive Browser.sh"
 chmod 700 "$STAGE/$NAME/documents/Primitive Browser.sh"
 
 cp docs/INSTALL.md "$STAGE/$NAME/INSTALL.md"

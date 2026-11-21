@@ -20,18 +20,15 @@ BIN=${1:-$HERE/target/armv7-unknown-linux-musleabihf/release/kb-kindle}
 # Library launcher name. The launcher was installed as "KB Browser.sh" before the rename.
 LAUNCHER="Primitive Browser.sh"
 OLD_LAUNCHER="KB Browser.sh"
-ICON_PNG="$HERE/assets/primitive-launcher-icon.png"
 LOGO_PNG="$HERE/assets/primitive-icon.png"
 
 [ -f "$BIN" ] || { echo "binary not found: $BIN" >&2; exit 1; }
 file "$BIN" | grep -q "ARM" || { echo "not an ARM binary: $BIN" >&2; exit 1; }
-[ -f "$ICON_PNG" ] || { echo "icon not found: $ICON_PNG" >&2; exit 1; }
 [ -f "$LOGO_PNG" ] || { echo "logo not found: $LOGO_PNG" >&2; exit 1; }
 
-# The launcher carries its icon in the header, as install.sh does.
-ICON_LINE="# Icon: data:image/png;base64,$(base64 < "$ICON_PNG" | tr -d '\n')"
+# The library entry carries its icon, light and dark, in the header (scripts/browser-entry.sh).
 LAUNCHER_TMP=$(mktemp)
-awk -v icon="$ICON_LINE" '{ print } /^# Author:/ { print icon }' "$HERE/deploy/Browser.sh" > "$LAUNCHER_TMP"
+sh "$HERE/scripts/browser-entry.sh" "$HERE/deploy/Browser.sh" "$LAUNCHER_TMP"
 
 # One shared connection: a single password prompt for all the steps below.
 CTL="/tmp/kbssh-$$"

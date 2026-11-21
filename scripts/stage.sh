@@ -42,9 +42,7 @@ if [ "$ARCH" = armel ]; then
     cp "$HELPERS/MUSL-LICENSE.txt" "$HELPERS/FBINK-CREDITS.txt" "$HELPERS/STB-LICENSE.txt" \
         "$HELPERS/QIMAGETRANSFORM-LICENSE.txt" "$STAGE/browser/bin/licenses/"
 fi
-# The library entry carries its icon in the header, after the Author line.
-ICON_LINE="# Icon: data:image/png;base64,$(base64 < assets/primitive-icon.png | tr -d '\n')"
-ICON_DARK_LINE="# IconDark: data:image/png;base64,$(base64 < assets/primitive-icon-dark.png | tr -d '\n')"
-awk -v icon="$ICON_LINE" -v icon_dark="$ICON_DARK_LINE" '{ print } /^# Author:/ { print icon; print icon_dark }' deploy/Browser.sh > "$STAGE/documents/Primitive Browser.sh"
+# The library entry carries its icon, light and dark, in the header (scripts/browser-entry.sh).
+sh scripts/browser-entry.sh deploy/Browser.sh "$STAGE/documents/Primitive Browser.sh"
 chmod 755 "$STAGE/documents/Primitive Browser.sh"
 echo "staged $STAGE"
